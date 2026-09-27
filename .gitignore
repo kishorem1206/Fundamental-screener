@@ -1,0 +1,48 @@
+# ── Secrets — never commit ───────────────────────────────────────────────
+.env
+.env.local
+*.env.local
+backend/.env
+
+# ── Python (backend) ─────────────────────────────────────────────────────
+backend/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# ── Node (frontend) ───────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/dist-export/
+
+# ── Backend generated/runtime data ───────────────────────────────────────
+# cache/ holds scraped JSON caches, a logged-in Screener.in browser session
+# profile (screener_profile/ — session cookies, not a text secret but still
+# credential-equivalent), and hundreds of MB of downloaded annual-report
+# PDFs. reports/ holds generated analysis PDFs/HTML. Neither belongs in
+# version control.
+backend/cache/
+backend/reports/
+
+# ── OS / editor ───────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+
+# ── Loose generated analysis outputs at the repo root (not source) ──────
+/*.pdf
+/*_analysis.html
+/idfc-first-roe-simulator.html
+/Macro analysis.html
+
+# ── Unrelated/superseded side projects living in this folder — each has
+# its own nested .git repo (Replit Equity-PDF-Renderer, Screener website/
+# openscreener), which git can't cleanly track as plain files anyway, and
+# pdf-renderer/ is an old rendering experiment superseded by
+# backend/app/reporting/editorial_pdf_service.py. Remove these lines if you
+# actually want any of them pushed alongside the app.
+/Replit Equity-PDF-Renderer/
+/pdf-renderer/
+/Screener website/

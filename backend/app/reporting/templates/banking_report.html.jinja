@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{ company.name }} — Banking Intelligence Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-950: #05070d;
+  --navy-900: #0a0f1c;
+  --navy-850: #0e1526;
+  --navy-800: #131b30;
+
+  --gold: #c9a227;
+  --gold-bright: #e8c766;
+
+  --teal: #4fb8a8;
+  --orange: #d98a4a;
+  --red: #c3543f;
+
+  --ink: #f2efe8;
+  --ink-dim: #a9b0c3;
+  --ink-faint: #6b7284;
+
+  --glass: rgba(255, 255, 255, 0.035);
+  --glass-hi: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.09);
+
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--navy-950);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.page { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+.section { padding: 56px 0; border-top: 1px solid var(--glass-border); }
+.section:first-child { border-top: none; }
+.section-eyebrow {
+  font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--gold); margin: 0 0 10px;
+}
+.section-title { font-family: var(--font-display); font-size: 30px; font-weight: 600; margin: 0 0 24px; color: var(--ink); }
+.section-subtitle { color: var(--ink-dim); font-size: 14px; margin: -14px 0 24px; max-width: 720px; }
+
+.card {
+  background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px;
+  padding: 24px; backdrop-filter: blur(14px);
+}
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-5 { grid-template-columns: repeat(5, 1fr); }
+/* screen-only: A4's print width (~794px CSS px) is itself under 860px, so
+   an unqualified query here silently collapsed every grid-2/3/4/5 section
+   to one column in EVERY PDF export (page.pdf() lays print media out at
+   the paper width, not the browser viewport) — a real, pre-existing bug
+   found 2026-09-15 once new KPI tiles made the single-column PDF stacking
+   visually obvious. This rule is genuinely mobile-only: it should never
+   fire for the A4 print layout this report is designed around. */
+@media screen and (max-width: 860px) {
+  .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; }
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.hero {
+  padding: 72px 0 48px;
+  background: radial-gradient(120% 160% at 15% -10%, rgba(201,162,39,0.14), transparent 55%),
+              radial-gradient(100% 140% at 100% 0%, rgba(79,184,168,0.10), transparent 50%);
+}
+.hero-badge { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); font-weight: 700; margin-bottom: 18px; }
+.hero-name { font-family: var(--font-display); font-size: 52px; font-weight: 600; margin: 0; color: var(--ink); }
+.hero-sub { color: var(--ink-dim); font-size: 16px; margin: 8px 0 32px; }
+.hero-score-row { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+.hero-score { font-family: var(--font-display); font-size: 44px; font-weight: 600; color: var(--gold-bright); }
+.hero-score-max { font-size: 18px; color: var(--ink-faint); }
+.hero-stance {
+  display: inline-block; padding: 6px 16px; border-radius: 999px; font-weight: 600; font-size: 13px;
+  letter-spacing: 0.04em; border: 1px solid var(--glass-border); background: var(--glass-hi);
+}
+.hero-headline { font-family: var(--font-display); font-size: 19px; font-weight: 500; color: var(--ink); max-width: 780px; margin: 0 0 24px; line-height: 1.5; }
+.hero-meta { display: flex; gap: 32px; color: var(--ink-dim); font-size: 13px; flex-wrap: wrap; }
+.hero-meta b { color: var(--ink); font-weight: 600; }
+
+/* ── Snapshot cards ───────────────────────────────────────────────────── */
+.stat-chip { text-align: left; }
+.stat-chip .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); margin-bottom: 8px; }
+.stat-chip .stat-value { font-family: var(--font-display); font-size: 28px; font-weight: 600; color: var(--ink); }
+
+/* ── Verdict panel ────────────────────────────────────────────────────── */
+.verdict-panel { padding: 32px; }
+.verdict-label { display: inline-block; padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.05em; background: var(--gold); color: var(--navy-950); margin-bottom: 16px; }
+.verdict-score-row { display: flex; align-items: center; gap: 16px; margin: 14px 0 18px; }
+.verdict-explanation { color: var(--ink-dim); font-size: 15px; max-width: 800px; }
+
+/* ── Scorecard table ──────────────────────────────────────────────────── */
+.scorecard-table { width: 100%; border-collapse: collapse; }
+.scorecard-table td { padding: 14px 10px; border-bottom: 1px solid var(--glass-border); vertical-align: middle; }
+.scorecard-table .cat-name { font-weight: 600; width: 22%; }
+.scorecard-table .cat-bar { width: 45%; }
+.scorecard-table .cat-score { width: 12%; text-align: right; font-family: var(--font-display); font-size: 17px; color: var(--gold-bright); }
+
+/* ── Metric cards ─────────────────────────────────────────────────────── */
+.metric-card { padding: 18px; }
+.metric-card .metric-label { font-size: 12px; color: var(--ink-dim); margin-bottom: 8px; }
+.metric-card .metric-value { font-family: var(--font-display); font-size: 26px; font-weight: 600; }
+.metric-card .metric-value.na { color: var(--ink-faint); font-size: 18px; }
+.metric-card .metric-na-msg { font-size: 11px; color: var(--ink-faint); margin-top: 6px; line-height: 1.4; }
+.metric-card .metric-status { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 8px; display: inline-block;
+  padding: 2px 8px; border-radius: 4px; }
+.status-EXCELLENT { color: var(--teal); background: rgba(79,184,168,0.12); }
+.status-GOOD { color: var(--teal); background: rgba(79,184,168,0.08); }
+.status-FAIR { color: var(--gold); background: rgba(201,162,39,0.10); }
+.status-POOR { color: var(--red); background: rgba(195,84,63,0.12); }
+
+/* ── Charts ───────────────────────────────────────────────────────────── */
+.chart-wrap { margin-top: 16px; page-break-inside: avoid; break-inside: avoid; }
+.chart-svg, .score-bar-svg { width: 100%; height: auto; display: block; }
+.chart-axis-label { font-size: 9px; fill: var(--ink-faint); font-family: var(--font-body); }
+.chart-axis-title { font-size: 10px; fill: var(--ink-dim); font-family: var(--font-body); }
+.chart-legend-label { font-size: 10px; fill: var(--ink-dim); font-family: var(--font-body); }
+.chart-point-label { font-size: 10px; fill: var(--gold-bright); font-family: var(--font-body); font-weight: 600; }
+.chart-empty-label { font-size: 12px; fill: var(--ink-faint); font-family: var(--font-body); }
+.narrative { color: var(--ink-dim); font-size: 14px; margin-top: 16px; line-height: 1.7; max-width: 780px; }
+
+/* ── Red flags / positive signals ────────────────────────────────────── */
+.flag-card { padding: 18px 20px; border-left: 3px solid var(--ink-faint); margin-bottom: 12px; }
+.flag-card.sev-HIGH { border-left-color: var(--red); }
+.flag-card.sev-MEDIUM { border-left-color: var(--gold); }
+.flag-card.sev-LOW { border-left-color: var(--ink-faint); }
+.flag-severity { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sev-HIGH .flag-severity { color: var(--red); }
+.sev-MEDIUM .flag-severity { color: var(--gold); }
+.sev-LOW .flag-severity { color: var(--ink-faint); }
+.flag-title { font-weight: 600; margin: 6px 0 4px; font-size: 15px; }
+.flag-desc { color: var(--ink-dim); font-size: 13px; }
+.signal-card { padding: 16px 18px; border-left: 3px solid var(--teal); margin-bottom: 10px; }
+.signal-title { font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+.signal-desc { color: var(--ink-dim); font-size: 13px; }
+.empty-state { color: var(--ink-faint); font-style: italic; font-size: 13px; }
+
+/* ── Peer table ───────────────────────────────────────────────────────── */
+.peer-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.peer-table th { text-align: right; padding: 10px 8px; color: var(--ink-faint); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--glass-border); }
+.peer-table th:first-child, .peer-table td:first-child { text-align: left; }
+.peer-table td { text-align: right; padding: 10px 8px; border-bottom: 1px solid var(--glass-border); color: var(--ink-dim); }
+.peer-table tr.subject-row td { color: var(--ink); font-weight: 600; background: var(--glass-hi); }
+.peer-table tr.subject-row td:first-child { color: var(--gold-bright); }
+
+/* ── Lists ────────────────────────────────────────────────────────────── */
+.point-list { list-style: none; padding: 0; margin: 0; }
+.point-list li { padding: 10px 0 10px 22px; position: relative; border-bottom: 1px solid var(--glass-border); color: var(--ink-dim); font-size: 13.5px; }
+.point-list li:last-child { border-bottom: none; }
+.point-list li::before { content: "—"; position: absolute; left: 0; color: var(--gold); }
+
+.watchlist-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--glass-border); }
+.watchlist-row:last-child { border-bottom: none; }
+.watchlist-metric { font-weight: 600; }
+
+/* ── Provenance table ─────────────────────────────────────────────────── */
+.prov-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.prov-table th { text-align: left; padding: 8px; color: var(--ink-faint); text-transform: uppercase; font-size: 10px;
+  border-bottom: 1px solid var(--glass-border); }
+.prov-table td { padding: 8px; border-bottom: 1px solid var(--glass-border); color: var(--ink-dim); }
+.confidence-pill { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.conf-HIGH { color: var(--teal); background: rgba(79,184,168,0.12); }
+.conf-MEDIUM { color: var(--gold); background: rgba(201,162,39,0.12); }
+.conf-LOW { color: var(--orange); background: rgba(217,138,74,0.12); }
+
+.disclaimer { color: var(--ink-faint); font-size: 11.5px; line-height: 1.7; max-width: 900px; }
+.footer-brand { color: var(--ink-faint); font-size: 11px; margin-top: 24px; }
+
+@media print {
+  body { background: var(--navy-950); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .section { padding: 30px 0; break-inside: avoid; }
+  .card, .metric-card, .flag-card, .signal-card, .chart-wrap { break-inside: avoid; }
+  .hero { padding-top: 24px; }
+}
+</style>
+</head>
+<body>
+{% macro metric_card(m) %}
+<div class="card metric-card">
+  <div class="metric-label">{{ m.label }}</div>
+  {% if m.available and m.value is not none %}
+    <div class="metric-value">{{ m.display }}</div>
+    {% if m.status %}<span class="metric-status status-{{ m.status }}">{{ m.status }}</span>{% endif %}
+  {% else %}
+    <div class="metric-value na">N/A</div>
+    {% if m.na_message %}<div class="metric-na-msg">{{ m.na_message }}</div>{% endif %}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro trend_block(chart, title) %}
+<div class="card chart-wrap">
+  <div class="metric-label">{{ title }}</div>
+  {% if chart and chart.has_history %}
+    {{ chart.svg | safe }}
+  {% else %}
+    <p class="empty-state">Insufficient historical data for this period.</p>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro render_blueprint_section(s) %}
+<div class="card" style="margin-bottom:14px;">
+  <div class="metric-label" style="margin-bottom:8px;">{{ s.title }}</div>
+  {% if s.content %}<p class="verdict-explanation">{{ s.content }}</p>{% endif %}
+  {% if s.key_points %}
+  <ul class="point-list">{% for kp in s.key_points %}<li>{{ kp }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if s.get('items') %}
+    {% for item in s.get('items') %}
+    {% if item.severity %}
+    <div class="flag-card sev-{{ item.severity }}" style="margin-top:8px;">
+      <span class="flag-severity">{{ item.severity }}</span>
+      <div class="flag-title">{{ item.title }}</div>
+      <div class="flag-desc">{{ item.description }}</div>
+    </div>
+    {% else %}
+    <p class="verdict-explanation"><b>{{ item.title }}</b>: {{ item.description }}</p>
+    {% endif %}
+    {% endfor %}
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="page">
+
+  <!-- 01 COVER / HERO -->
+  <section class="section hero" style="border-top:none;">
+    <div class="hero-badge">Banking Intelligence</div>
+    <h1 class="hero-name">{{ company.name }}</h1>
+    <p class="hero-sub">{{ company.sub_sector or company.sector }} &middot; {{ company.exchange }}: {{ company.ticker }}</p>
+    <div class="hero-score-row">
+      <span class="hero-score">{{ verdict.score | round(0) if verdict.score is not none else "N/A" }}<span class="hero-score-max"> / 100</span></span>
+      <span class="hero-stance">{{ verdict.label | upper }}</span>
+    </div>
+    {% if verdict.headline %}<p class="hero-headline">{{ verdict.headline }}</p>{% endif %}
+
+    <!-- Live Snapshot KPI tiles — Price / Market Cap / P/E / 52-Week Range,
+         same 4 fields as the app's own header KPI row (AnalysisDashboard.tsx),
+         so the PDF and UI show the identical snapshot. -->
+    <div class="grid grid-4" style="margin-top:20px; margin-bottom:8px;">
+      <div class="card stat-chip">
+        <div class="stat-label">Price</div>
+        <div class="stat-value">₹{{ company.price }}{% if company.price_change_pct is not none %}<span style="font-size:13px; color:{{ 'var(--teal)' if company.price_change_pct >= 0 else 'var(--orange)' }};"> ({{ '%+.2f' | format(company.price_change_pct) }}%)</span>{% endif %}</div>
+      </div>
+      <div class="card stat-chip">
+        <div class="stat-label">Market Cap</div>
+        <div class="stat-value">₹{{ company.market_cap }} Cr</div>
+      </div>
+      <div class="card stat-chip">
+        <div class="stat-label">P/E (TTM)</div>
+        <div class="stat-value">{{ company.pe_ratio or "—" }}</div>
+      </div>
+      <div class="card stat-chip">
+        <div class="stat-label">52-Week Range</div>
+        <div class="stat-value" style="font-size:19px;">{% if company.week52_low and company.week52_high %}₹{{ company.week52_low }}–₹{{ company.week52_high }}{% else %}—{% endif %}</div>
+      </div>
+    </div>
+    <p class="hero-sub" style="font-size:11px;">
+      Analysis Date {{ generated_at }}
+      {% if company.price_as_of %}&middot; Price as of {{ company.price_as_of }} UTC &middot; Source: Yahoo Finance{% endif %}
+    </p>
+
+    {% if price_charts["1y"] or price_charts["5y"] %}
+    <div class="grid grid-2" style="margin-top:16px;">
+      {% if price_charts["1y"] %}
+      <div class="card chart-wrap"><div class="metric-label">1-Year Price</div>{{ price_charts["1y"] | safe }}</div>
+      {% endif %}
+      {% if price_charts["5y"] %}
+      <div class="card chart-wrap"><div class="metric-label">5-Year Price</div>{{ price_charts["5y"] | safe }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  {% if change_log and change_log.has_material_change %}
+  <!-- 00B WHAT CHANGED SINCE LAST ANALYSIS (Premium PDF System, Stage B7) —
+       silently absent on a first-ever analysis or when nothing material
+       changed since the prior one, per change_log.py's own docstring. -->
+  <section class="section">
+    <p class="section-eyebrow">Since Last Analysis</p>
+    <h2 class="section-title">What Changed Since Last Analysis</h2>
+    <ul class="point-list">
+      {% for c in change_log.changes %}<li>{{ c }}</li>{% endfor %}
+      {% for r in change_log.new_risks %}<li style="color:var(--red);">New risk: {{ r }}</li>{% endfor %}
+      {% for r in change_log.resolved_risks %}<li style="color:var(--teal);">Resolved risk: {{ r }}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if company.about or company.key_points %}
+  <!-- 01B COMPANY OVERVIEW (Screener.in about/key_points) -->
+  <section class="section">
+    <p class="section-eyebrow">01 &middot; Company</p>
+    <h2 class="section-title">Company Overview</h2>
+    {% if company.about %}<p class="verdict-explanation">{{ company.about }}</p>{% endif %}
+    {% if company.key_points %}<p class="verdict-explanation">{{ company.key_points }}</p>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if brands %}
+  <!-- 01A BRAND PORTFOLIO (Premium PDF System, Stage B1) — structured brand
+       facts extracted from Screener.in's Key Points text, validated against
+       the source (see brand_extraction.py). -->
+  <section class="section">
+    <p class="section-eyebrow">01A &middot; Brands</p>
+    <h2 class="section-title">Brand Portfolio</h2>
+    <div class="card" style="overflow-x:auto;">
+      <table class="prov-table">
+        <thead><tr><th>Brand</th><th>Category</th><th>Ownership</th><th>Market Share</th></tr></thead>
+        <tbody>
+        {% for b in brands %}
+        <tr>
+          <td>{{ b.brand_name }}</td>
+          <td>{{ b.category or "—" }}</td>
+          <td>{{ (b.ownership or "—") | title }}</td>
+          <td>
+            {% if b.market_share_pct is not none %}{{ '%g' | format(b.market_share_pct) }}%{% if b.market_share_context %} ({{ b.market_share_context }}){% endif %}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if blueprint.sections %}
+  <!-- 01C BUSINESS & INTERPRETATION (Report Blueprint, Stage L3 of the
+       Llama Report Interpretation Architecture — local-Llama-generated,
+       validated narrative, additive alongside the AI Fundamental Analysis
+       section further down; see app/interpretation/. Best-effort: an empty
+       blueprint (Ollama down, everything dropped by the validator) simply
+       renders nothing here.) -->
+  <section class="section">
+    <p class="section-eyebrow">01C &middot; Interpretation</p>
+    <h2 class="section-title">Business &amp; Interpretation</h2>
+    <p class="section-subtitle">Generated by a local Llama model, interpreting only the deterministic data in this report — validated to cite only figures that appear elsewhere in it. Lower nuance than the AI Fundamental Analysis section below, which uses a larger model.</p>
+    {% for s in blueprint.sections %}{{ render_blueprint_section(s) }}{% endfor %}
+  </section>
+  {% endif %}
+
+  {% if pnl_analysis.years_of_data %}
+  <!-- 01D PROFIT & LOSS ANALYSIS (P&L Analysis System, Stage P3) —
+       deterministic table/CAGR/flags from app/calculations/pnl_engine.py,
+       computed fresh at render time (see data_builder.py), plus the 6
+       pnl_-prefixed blueprint narrative sections split out from 01C above. -->
+  <section class="section">
+    <p class="section-eyebrow">01D &middot; P&amp;L</p>
+    <h2 class="section-title">Profit &amp; Loss Analysis</h2>
+    <p class="section-subtitle">{{ pnl_analysis.years_of_data }}-year consolidated P&amp;L history, Screener.in.</p>
+
+    <div class="card" style="overflow-x:auto; margin-bottom:16px;">
+      <table class="prov-table">
+        <thead><tr>
+          <th>Particulars</th>
+          {% for y in pnl_analysis.fiscal_years[-6:] %}<th>FY{{ y[2:4] }}</th>{% endfor %}
+          {% if pnl_analysis.table.sales.TTM is defined %}<th>TTM</th>{% endif %}
+        </tr></thead>
+        <tbody>
+        {% for label, key, unit, decimals in [
+          ("Sales", "sales", "", 0), ("Operating Profit", "operating_profit", "", 0),
+          ("OPM", "opm", "%", 1), ("Other Income", "other_income", "", 0),
+          ("Interest", "interest", "", 0), ("Depreciation", "depreciation", "", 0),
+          ("PBT", "pbt", "", 0), ("Net Profit", "net_profit", "", 0), ("EPS", "eps", "", 2)
+        ] %}
+        <tr>
+          <td>{{ label }}</td>
+          {% for y in pnl_analysis.fiscal_years[-6:] %}<td>{{ fmt(pnl_analysis.table[key].get(y), unit, decimals) }}</td>{% endfor %}
+          {% if pnl_analysis.table.sales.TTM is defined %}<td>{{ fmt(pnl_analysis.table[key].get('TTM'), unit, decimals) }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="overflow-x:auto; margin-bottom:16px;">
+      <table class="prov-table">
+        <thead><tr><th>Compounded Growth</th><th>10Y</th><th>7Y</th><th>5Y</th><th>3Y</th></tr></thead>
+        <tbody>
+        {% for label, series in [
+          ("Sales CAGR", pnl_analysis.growth.sales_cagr), ("Profit CAGR", pnl_analysis.growth.profit_cagr),
+          ("EPS CAGR", pnl_analysis.growth.eps_cagr), ("Stock Price CAGR", pnl_analysis.stock_price_cagr)
+        ] %}
+        <tr>
+          <td>{{ label }}</td>
+          <td>{{ fmt(series.get('10y'), "%") }}</td><td>{{ fmt(series.get('7y'), "%") }}</td>
+          <td>{{ fmt(series.get('5y'), "%") }}</td><td>{{ fmt(series.get('3y'), "%") }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pnl_analysis.red_flags %}
+    <p class="metric-label" style="margin-bottom:8px;">P&amp;L Red Flags</p>
+    <ul class="point-list" style="margin-bottom:16px;">
+      {% for f in pnl_analysis.red_flags %}<li>{{ f.replace('_', ' ').title() }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if pnl_analysis.positive_signals %}
+    <p class="metric-label" style="margin-bottom:8px;">P&amp;L Positive Signals</p>
+    <ul class="point-list" style="margin-bottom:16px;">
+      {% for s in pnl_analysis.positive_signals %}<li>{{ s.replace('_', ' ').title() }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% for s in pnl_narrative_sections %}{{ render_blueprint_section(s) }}{% endfor %}
+  </section>
+  {% endif %}
+
+  {% if concall.latest_transcript %}
+  <!-- 01E MANAGEMENT COMMENTARY (Concall Intelligence System, Stage C5) —
+       deterministic guidance/credibility/promise data from Stages C0-C4,
+       computed fresh at render time (see data_builder.py). No narrative
+       LLM stage exists for this yet — renders the real data as-is. -->
+  <section class="section">
+    <p class="section-eyebrow">01E &middot; Concall</p>
+    <h2 class="section-title">Management Commentary</h2>
+    <p class="section-subtitle">
+      Latest earnings call: {{ concall.latest_transcript.quarter or concall.latest_transcript.call_date or concall.latest_transcript.filing_date }}, NSE filing.
+      {% if concall.latest_transcript.management_participants %}
+        Management: {{ concall.latest_transcript.management_participants[:4] | map(attribute='name') | join(', ') }}.
+      {% endif %}
+    </p>
+
+    {% if concall_highlights and concall_highlights.sections %}
+    <p class="metric-label" style="margin-bottom:8px;">
+      Results &amp; Concall Highlights
+      {% if concall_highlights.source == "ARTHNEETI" %}(source: arthneeti.com){% else %}(generated from this report's own extracted data){% endif %}
+    </p>
+    {% for s in concall_highlights.sections %}
+    <div style="margin-bottom:14px;">
+      <div style="font-weight:600; font-size:13.5px; margin-bottom:4px;">{{ s.heading }}</div>
+      <ul class="point-list">
+        {% for b in s.bullets[:6] %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if concall.topic_sentiment %}
+    <p class="metric-label" style="margin-bottom:8px;">Management Tone by Topic</p>
+    <div class="grid-2" style="margin-bottom:16px;">
+      {% for t in concall.topic_sentiment %}
+      <div class="card" style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+        <span>{{ t.topic }}</span>
+        <b style="color:{{ 'var(--teal)' if t.sentiment == 'POSITIVE' else 'var(--red)' if t.sentiment == 'NEGATIVE' else 'var(--gold)' if t.sentiment == 'MIXED' else 'var(--ink-dim)' }};">{{ t.arrow }} {{ t.sentiment | title }}</b>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if concall.what_changed %}
+    <p class="metric-label" style="margin-bottom:8px;">What Changed Since Last Call</p>
+    <ul class="point-list" style="margin-bottom:16px;">
+      {% for c in concall.what_changed %}<li>{{ c }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if concall.guidance_consistency %}
+    <p class="section-subtitle" style="margin-bottom:16px;">
+      Guidance Consistency: <b>{{ concall.guidance_consistency.score | round(0) }}/100</b>
+      ({{ concall.guidance_consistency.metrics_tracked }} metrics tracked, {{ concall.guidance_consistency.total_updates }} quarter-over-quarter updates on record —
+      reiterated/upgraded vs. downgraded, not a hit-rate accuracy score).
+    </p>
+    {% endif %}
+
+    {% if concall.guidance %}
+    <div class="card" style="overflow-x:auto; margin-bottom:16px;">
+      <table class="prov-table">
+        <thead><tr><th>Metric</th><th>Period</th><th>Target</th><th>Tone</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for g in concall.guidance %}
+        <tr>
+          <td>{{ g.metric.replace('_', ' ').title() }}</td>
+          <td>{{ g.period or "—" }}</td>
+          <td>
+            {% if g.guidance_type == "quantitative" %}
+              {% if g.target_low is not none and g.target_high is not none %}{{ '%g' | format(g.target_low) }}-{{ '%g' | format(g.target_high) }} {{ g.unit or '' }}
+              {% elif g.target_value is not none %}{{ '%g' | format(g.target_value) }} {{ g.unit or '' }}
+              {% else %}—{% endif %}
+            {% else %}qualitative{% endif %}
+          </td>
+          <td>{{ g.tone or "—" }}</td>
+          <td>{{ g.status }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if concall.credibility %}
+    <p class="metric-label" style="margin-bottom:8px;">Guidance Consistency (across quarters on record)</p>
+    <ul class="point-list" style="margin-bottom:16px;">
+      {% for c in concall.credibility %}
+      <li>{{ c.metric.replace('_', ' ').title() }}: {{ c.guidance_count }} updates — {{ c.upgraded_count }} upgraded, {{ c.downgraded_count }} downgraded, {{ c.reiterated_count }} reiterated (latest: {{ c.last_status }})</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+  </section>
+  {% endif %}
+
+  <!-- 02 INVESTMENT SNAPSHOT -->
+  <section class="section">
+    <p class="section-eyebrow">02 &middot; Overview</p>
+    <h2 class="section-title">Investment Snapshot</h2>
+    <div class="grid grid-5">
+      {% for c in snapshot_cards %}
+      <div class="card stat-chip">
+        <div class="stat-label">{{ c.label }}</div>
+        <div class="stat-value">{{ c.display }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- 03 OVERALL VERDICT -->
+  <section class="section">
+    <div class="card verdict-panel">
+      <span class="verdict-label">{{ verdict.label }}</span>
+      <div class="verdict-score-row">
+        {{ charts.score_bar(verdict.score) | safe if verdict.score is not none else '' }}
+      </div>
+      {% if verdict.headline %}<p class="verdict-explanation">{{ verdict.headline }}</p>{% endif %}
+    </div>
+  </section>
+
+  <!-- 04 BANKING SCORECARD -->
+  <section class="section">
+    <p class="section-eyebrow">04 &middot; Scorecard</p>
+    <h2 class="section-title">Banking Quality Scorecard</h2>
+    <div class="card">
+      <table class="scorecard-table">
+        {% for row in scorecard %}
+        <tr>
+          <td class="cat-name">{{ row.category }}</td>
+          <td class="cat-bar">{{ row.score_bar_svg | safe }}</td>
+          <td class="cat-score">{{ row.score if row.score is not none else "N/A" }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </section>
+
+  <!-- 05 GROWTH & FRANCHISE -->
+  <section class="section">
+    <p class="section-eyebrow">05 &middot; Growth</p>
+    <h2 class="section-title">Growth &amp; Franchise</h2>
+    <div class="grid grid-3">
+      {% for m in growth.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+    {% if growth.narrative %}<p class="narrative">{{ growth.narrative }}</p>{% endif %}
+  </section>
+
+  <!-- 06 FUNDING QUALITY -->
+  <section class="section">
+    <p class="section-eyebrow">06 &middot; Funding</p>
+    <h2 class="section-title">Funding Quality</h2>
+    <div class="grid grid-3">
+      {% for m in funding.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+    {{ trend_block(funding.casa_trend, "CASA Ratio — Historical Trend") }}
+  </section>
+
+  <!-- 07 CORE PROFITABILITY -->
+  <section class="section">
+    <p class="section-eyebrow">07 &middot; Profitability</p>
+    <h2 class="section-title">Core Profitability</h2>
+    <div class="grid grid-4">
+      {% for m in profitability.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+    {{ trend_block(profitability.nim_trend, "NIM — Historical Trend") }}
+    <div class="card chart-wrap">
+      <div class="metric-label">ROA / ROE — Historical Trend</div>
+      {{ profitability.roa_roe_trend.svg | safe }}
+    </div>
+    {% if profitability.narrative %}<p class="narrative">{{ profitability.narrative }}</p>{% endif %}
+  </section>
+
+  <!-- 08 ASSET QUALITY -->
+  <section class="section">
+    <p class="section-eyebrow">08 &middot; Asset Quality</p>
+    <h2 class="section-title">Asset Quality</h2>
+    <p class="section-subtitle">One of the highest-priority sections in this framework — a low headline GNPA does not by itself mean low risk.</p>
+    <div class="grid grid-5">
+      {% for m in asset_quality.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+    <div class="card chart-wrap">
+      <div class="metric-label">GNPA / NNPA — Historical Trend</div>
+      {{ asset_quality.gnpa_nnpa_trend.svg | safe }}
+    </div>
+    {{ trend_block(asset_quality.credit_cost_trend, "Credit Cost — Historical Trend") }}
+  </section>
+
+  <!-- 09 CAPITAL & BALANCE SHEET -->
+  <section class="section">
+    <p class="section-eyebrow">09 &middot; Capital</p>
+    <h2 class="section-title">Capital &amp; Balance Sheet</h2>
+    <div class="grid grid-3">
+      {% for m in capital.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+    {{ trend_block(capital.car_trend, "Capital Adequacy Ratio — Historical Trend") }}
+  </section>
+
+  <!-- 10 OPERATING EFFICIENCY -->
+  <section class="section">
+    <p class="section-eyebrow">10 &middot; Efficiency</p>
+    <h2 class="section-title">Operating Efficiency</h2>
+    <div class="grid grid-3">
+      {% for m in efficiency.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+  </section>
+
+  <!-- 11 HISTORICAL TREND -->
+  <section class="section">
+    <p class="section-eyebrow">11 &middot; History</p>
+    <h2 class="section-title">Historical Trend</h2>
+    <p class="section-subtitle">Every genuine quarterly filing found over the last several years — deterioration and improvement should be visually obvious, not buried in a single quarter's snapshot.</p>
+    <div class="grid grid-2">
+      {% for key, chart in historical_trend.items() %}
+      <div class="card chart-wrap">
+        <div class="metric-label">{{ chart.label }}</div>
+        {% if chart.has_history %}
+          {{ chart.svg | safe }}
+        {% else %}
+          <p class="empty-state">Insufficient historical data for this period.</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- 12 PEER COMPARISON -->
+  <section class="section">
+    <p class="section-eyebrow">12 &middot; Peers</p>
+    <h2 class="section-title">Peer Comparison</h2>
+    <div class="card" style="overflow-x:auto;">
+      <table class="peer-table">
+        <thead><tr>
+          <th>Company</th><th>ROE</th><th>ROA</th><th>NIM</th><th>CASA</th>
+          <th>GNPA</th><th>NNPA</th><th>CAR</th><th>P/B</th><th>P/E</th>
+        </tr></thead>
+        <tbody>
+        {% for r in peers.rows %}
+        <tr class="{{ 'subject-row' if r.is_subject else '' }}">
+          <td>{{ r.company_name }}</td>
+          <td>{{ fmt(r.roe, "%") }}</td><td>{{ fmt(r.roa, "%") }}</td>
+          <td>{{ fmt(r.nim, "%") }}</td><td>{{ fmt(r.casa_ratio, "%") }}</td>
+          <td>{{ fmt(r.gross_npa, "%") }}</td><td>{{ fmt(r.net_npa, "%") }}</td>
+          <td>{{ fmt(r.capital_adequacy_ratio, "%") }}</td>
+          <td>{{ fmt(r.pb_ratio, "x") }}</td><td>{{ fmt(r.pe_ratio, "x") }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card chart-wrap" style="margin-top:16px;">
+      <div class="metric-label">P/B vs ROE — Peer Positioning</div>
+      {{ peers.scatter_svg | safe }}
+    </div>
+    {% if peer_performance.svg %}
+    <!-- Premium PDF System, Stage B4 -->
+    <div class="card chart-wrap" style="margin-top:16px;">
+      <div class="metric-label">Relative Price Performance vs. Peers (1Y, rebased to 100)</div>
+      {{ peer_performance.svg | safe }}
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- 13 VALUATION -->
+  <section class="section">
+    <p class="section-eyebrow">13 &middot; Valuation</p>
+    <h2 class="section-title">Valuation</h2>
+    <div class="grid grid-3">
+      {% for m in valuation.metrics %}{{ metric_card(m) }}{% endfor %}
+    </div>
+    {% if valuation.narrative %}<p class="narrative">{{ valuation.narrative }}</p>{% endif %}
+  </section>
+
+  <!-- 14 RED FLAGS -->
+  <section class="section">
+    <p class="section-eyebrow">14 &middot; Risk</p>
+    <h2 class="section-title">Red Flags</h2>
+    {% if red_flags %}
+      {% for f in red_flags %}
+      <div class="card flag-card sev-{{ f.severity }}">
+        <span class="flag-severity">{{ f.severity }}</span>
+        <div class="flag-title">{{ f.title }}</div>
+        <div class="flag-desc">{{ f.description }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No material red flags identified from the available validated data.</p>
+    {% endif %}
+  </section>
+
+  <!-- 15 POSITIVE SIGNALS -->
+  <section class="section">
+    <p class="section-eyebrow">15 &middot; Signals</p>
+    <h2 class="section-title">Positive Signals</h2>
+    {% if positive_signals %}
+      {% for s in positive_signals %}
+      <div class="card signal-card">
+        <div class="signal-title">{{ s.title }}</div>
+        <div class="signal-desc">{{ s.description }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No distinct positive catalysts identified from the available validated data.</p>
+    {% endif %}
+  </section>
+
+  <!-- 16 INVESTMENT THESIS -->
+  <section class="section">
+    <p class="section-eyebrow">16 &middot; Thesis</p>
+    <h2 class="section-title">Investment Thesis</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="metric-label" style="margin-bottom:12px;">Why This Bank Is Interesting</div>
+        {% if thesis.points %}<ul class="point-list">{% for p in thesis.points %}<li>{{ p }}</li>{% endfor %}</ul>
+        {% else %}<p class="empty-state">No thesis points available.</p>{% endif %}
+      </div>
+      <div class="card">
+        <div class="grid" style="grid-template-columns:1fr; gap:20px;">
+          <div>
+            <div class="metric-label" style="color:var(--teal); margin-bottom:8px;">Bull Case</div>
+            <ul class="point-list">{% for p in thesis.bull_case %}<li>{{ p }}</li>{% endfor %}</ul>
+          </div>
+          <div>
+            <div class="metric-label" style="color:var(--orange); margin-bottom:8px;">Bear Case</div>
+            <ul class="point-list">{% for p in thesis.bear_case %}<li>{{ p }}</li>{% endfor %}</ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 17 WHAT COULD CHANGE THE THESIS -->
+  <section class="section">
+    <p class="section-eyebrow">17 &middot; Monitoring</p>
+    <h2 class="section-title">What Could Change the Thesis</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="metric-label" style="color:var(--teal); margin-bottom:8px;">What Would Make Us More Bullish</div>
+        <ul class="point-list">{% for p in what_could_change.more_bullish %}<li>{{ p }}</li>{% endfor %}</ul>
+      </div>
+      <div class="card">
+        <div class="metric-label" style="color:var(--orange); margin-bottom:8px;">What Would Make Us More Cautious</div>
+        <ul class="point-list">{% for p in what_could_change.more_cautious %}<li>{{ p }}</li>{% endfor %}</ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 18 WHAT TO TRACK NEXT -->
+  <section class="section">
+    <p class="section-eyebrow">18 &middot; Watchlist</p>
+    <h2 class="section-title">Next Quarter Watchlist</h2>
+    <div class="card">
+      {% if what_to_track %}
+        {% for item in what_to_track %}
+        <div class="watchlist-row"><span class="watchlist-metric">{{ item }}</span></div>
+        {% endfor %}
+      {% else %}
+        <p class="empty-state">No specific monitoring points available.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- 19 DATA & METHODOLOGY -->
+  <section class="section">
+    <p class="section-eyebrow">19 &middot; Methodology</p>
+    <h2 class="section-title">Data Quality &amp; Methodology</h2>
+    <div class="grid grid-4" style="margin-bottom:24px;">
+      <div class="card stat-chip"><div class="stat-label">Metrics Analysed</div><div class="stat-value">{{ data_quality.metrics_analysed }}</div></div>
+      <div class="card stat-chip"><div class="stat-label">Metrics Available</div><div class="stat-value">{{ data_quality.metrics_available }}</div></div>
+      <div class="card stat-chip"><div class="stat-label">Data Quality</div><div class="stat-value">{{ fmt(data_quality.data_quality_score, "%", 0) }}</div></div>
+      <div class="card stat-chip"><div class="stat-label">Confidence</div><div class="stat-value">{{ fmt(data_quality.confidence_score, "%", 0) }}</div></div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <table class="prov-table">
+        <thead><tr><th>Metric</th><th>Source</th><th>Type</th><th>Period</th><th>Confidence</th></tr></thead>
+        <tbody>
+        {% for row in data_quality.provenance %}
+        <tr>
+          <td>{{ row.metric }}</td>
+          <td>{{ row.source_document or row.source }}</td>
+          <td>{{ row.reported_or_calculated }}</td>
+          <td>{{ row.period }}</td>
+          <td><span class="confidence-pill conf-{{ row.confidence }}">{{ row.confidence }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="footer-brand">Framework: {{ framework_version }} &middot; Renderer: {{ renderer_version }} &middot; Generated {{ generated_at }}</p>
+  </section>
+
+  {% if source_ledger %}
+  <!-- 19B SOURCES & EVIDENCE (Premium PDF System, Stage B6) — every source
+       already tracked per-row across the app's ingestion modules,
+       aggregated here for one "where did this report's numbers come from"
+       page (see source_ledger.py). -->
+  <section class="section">
+    <p class="section-eyebrow">19B &middot; Sources</p>
+    <h2 class="section-title">Sources &amp; Evidence</h2>
+    <p class="section-subtitle">Every data source used in this report, grouped by reliability tier (1 = regulatory/exchange filing, 2 = high-quality secondary aggregator, 3 = context/industry).</p>
+    <div class="card" style="overflow-x:auto;">
+      <table class="prov-table">
+        <thead><tr><th>Source</th><th>Used For</th><th>Tier</th><th>Date Range</th><th>Facts</th></tr></thead>
+        <tbody>
+        {% for e in source_ledger %}
+        <tr>
+          <td>{{ e.source }}</td>
+          <td>{{ e.used_for }}</td>
+          <td>{{ e.tier }}</td>
+          <td>{% if e.date_from and e.date_to %}{{ e.date_from[:10] }} – {{ e.date_to[:10] }}{% elif e.date_from %}{{ e.date_from[:10] }}{% else %}—{% endif %}</td>
+          <td>{{ e.fact_count }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- 20 OWNERSHIP & GOVERNANCE -->
+  {% if governance.shareholding or governance.events %}
+  <section class="section">
+    <p class="section-eyebrow">20 &middot; Governance</p>
+    <h2 class="section-title">Ownership &amp; Governance</h2>
+    <p class="section-subtitle">Promoter shareholding and pledge % from NSE's quarterly XBRL filings — the only source with pledge data. Screener.in's own shareholding section has no pledge field at all, so it's shown separately below purely as supplementary trend depth, never blended into the NSE row.</p>
+    {% if governance.shareholding %}
+    <div class="card" style="overflow-x:auto;">
+      <table class="prov-table">
+        <thead><tr><th>Period</th><th>Promoter %</th><th>Public %</th><th>Pledge %</th></tr></thead>
+        <tbody>
+        {% for r in governance.shareholding %}
+        <tr>
+          <td>{{ r.period_end }}</td>
+          <td>{{ fmt(r.promoter_pct, "%") }}</td>
+          <td>{{ fmt(r.public_pct, "%") }}</td>
+          <td>{% if r.pledge_pct and r.pledge_pct > 0 %}<span class="confidence-pill conf-LOW">{{ fmt(r.pledge_pct, "%") }}</span>{% else %}{{ fmt(r.pledge_pct, "%") }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if governance.shareholding_screener %}
+    <p class="metric-label" style="margin-top:16px;">Supplementary trend (Screener.in — no pledge field)</p>
+    <div class="card" style="overflow-x:auto;">
+      <table class="prov-table">
+        <thead><tr><th>Period</th><th>Promoter %</th><th>FII %</th><th>DII %</th></tr></thead>
+        <tbody>
+        {% for r in governance.shareholding_screener %}
+        <tr>
+          <td>{{ r.period_end }}</td>
+          <td>{{ fmt(r.promoter_pct, "%") }}</td>
+          <td>{{ fmt(r.fii_pct, "%") }}</td>
+          <td>{{ fmt(r.dii_pct, "%") }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if governance.events %}
+    <p class="metric-label" style="margin-top:16px;">Deterministic Governance Flags</p>
+    {% for ev in governance.events %}
+    <div class="card flag-card sev-{{ ev.severity }}">
+      <span class="flag-severity">{{ ev.severity }}</span>
+      <div class="flag-title">{{ ev.event_type }} &middot; {{ ev.event_date }}</div>
+      <div class="flag-desc">{{ ev.description }}</div>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <!-- 21 MARKET INTELLIGENCE -->
+  {% if market_intel.analyst_consensus or market_intel.forward_estimates or market_intel.earnings_calendar or market_intel.corporate_actions or market_intel.news %}
+  <section class="section">
+    <p class="section-eyebrow">21 &middot; Market Intelligence</p>
+    <h2 class="section-title">Market Intelligence</h2>
+    {% if market_intel.analyst_consensus %}
+    <p class="metric-label">Analyst Consensus</p>
+    <div class="grid grid-2">
+      {% for a in market_intel.analyst_consensus %}
+      <div class="card">
+        <div class="metric-label">Source: {{ a.source }}</div>
+        <div class="metric-value" style="font-size:20px;">₹{{ fmt(a.target_price_mean) }}</div>
+        <div class="metric-na-msg">{{ a.num_analysts or "N/A" }} analysts &middot; {{ a.sentiment or "N/A" }} &middot; range ₹{{ fmt(a.target_price_low) }}&ndash;₹{{ fmt(a.target_price_high) }} &middot; implied upside {{ fmt(a.implied_upside_pct, "%") }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="section-subtitle" style="margin-top:8px;">Each card is a distinct external analyst source, never averaged together.</p>
+    {% endif %}
+
+    {% if market_intel.forward_estimates %}
+    <p class="metric-label" style="margin-top:20px;">Forward Estimates (Yahoo Finance consensus)</p>
+    <div class="card" style="overflow-x:auto;">
+      <table class="prov-table">
+        <thead><tr><th>Type</th><th>Period</th><th>Avg</th><th>Low&ndash;High</th><th># Analysts</th></tr></thead>
+        <tbody>
+        {% for r in market_intel.forward_estimates %}
+        <tr>
+          <td>{{ r.metric_type }}</td><td>{{ r.period_label }}</td>
+          <td>{{ fmt(r.avg) }}</td><td>{{ fmt(r.low) }}&ndash;{{ fmt(r.high) }}</td>
+          <td>{{ r.num_analysts or "N/A" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if market_intel.earnings_calendar %}
+    <p class="metric-label" style="margin-top:20px;">Earnings Calendar</p>
+    <div class="card">
+      <div class="metric-na-msg">
+        Next earnings: <b>{{ market_intel.earnings_calendar.next_earnings_date or "N/A" }}</b> &middot;
+        Ex-dividend: {{ market_intel.earnings_calendar.ex_dividend_date or "N/A" }} &middot;
+        Expected EPS: {{ fmt(market_intel.earnings_calendar.expected_eps_avg) }}
+        ({{ fmt(market_intel.earnings_calendar.expected_eps_low) }}&ndash;{{ fmt(market_intel.earnings_calendar.expected_eps_high) }})
+      </div>
+    </div>
+    {% endif %}
+
+    {% if market_intel.corporate_actions %}
+    <p class="metric-label" style="margin-top:20px;">Recent Corporate Actions</p>
+    <ul class="point-list">
+      {% for r in market_intel.corporate_actions %}
+      <li>{{ r.action_date }}: {{ r.action_type }} &mdash; {{ fmt(r.value) }}{{ " per share" if r.action_type == "DIVIDEND" else ":1 split" }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if market_intel.news %}
+    <p class="metric-label" style="margin-top:20px;">Recent News</p>
+    <ul class="point-list">
+      {% for r in market_intel.news %}
+      <li>[{{ r.published_at or "" }}] {{ r.headline }} <i>({{ r.provider or "Yahoo Finance" }})</i></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <!-- 22 DISCLAIMER -->
+  <section class="section" style="padding-bottom:80px;">
+    <p class="disclaimer">
+      This report is generated from available financial and market data and is intended for research and
+      educational purposes. It is not investment advice. Historical performance and financial metrics do not
+      guarantee future results. Data may contain delays, revisions or omissions. Always verify important
+      figures against the latest official company, exchange and regulatory disclosures before making
+      investment decisions. The Business &amp; Interpretation section is generated by a local Llama
+      language model, validated to only cite figures present elsewhere in this report — narrative quality
+      and nuance are lower than the AI Fundamental Analysis section, which uses a larger model.
+    </p>
+  </section>
+
+</div>
+</body>
+</html>

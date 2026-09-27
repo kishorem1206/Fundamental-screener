@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── "Mindful Finance" design system — ported 2026-09-15 from
+   `Macro analysis.html`. Same tokens (names, not just values) the banking
+   Jinja/HTML report (app/reporting/templates/banking_report.html.jinja)
+   already uses, so all three render surfaces (this UI, the ReportLab PDF,
+   the banking PDF) now share one visual language. ──────────────────────── */
+:root {
+  --bg-base: #070f1f;        /* navy-950 */
+  --bg-card: #0f1f3d;        /* navy-850 — flat fallback where blur can't apply */
+  --bg-card-hover: #142a4f;  /* navy-800 */
+  --border-subtle: rgba(255, 255, 255, 0.14);  /* glass-border */
+  --border-accent: #c9a227;  /* gold */
+  --text-primary: #f3f0e6;   /* ink — warm off-white, not cool gray */
+  --text-secondary: #a9b3c9; /* ink-dim */
+  --text-muted: #6f7c96;     /* ink-faint */
+  --text-dim: #6f7c96;       /* ink-faint */
+  --accent-blue: #c9a227;    /* gold — primary brand/chart accent (was bright blue) */
+  --accent-gold-bright: #e8c766;
+  --accent-green: #4fb3a0;   /* teal — positive/improving */
+  --accent-red: #d9694f;     /* terracotta red — negative/declining */
+  --accent-yellow: #e0793c;  /* orange — warning/medium severity */
+  --accent-purple: #e8c766;  /* reuses gold-bright rather than an off-palette hue */
+  --accent-sky: #7fb8ff;     /* secondary chart hue for multi-series charts (5th/6th color) */
+  --bg-input: rgba(255, 255, 255, 0.06);
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-hi: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(201, 162, 39, 0.08), transparent 60%),
+    radial-gradient(1000px 700px at 110% 10%, rgba(79, 179, 160, 0.06), transparent 55%),
+    linear-gradient(180deg, var(--bg-base), #0b1830 45%, var(--bg-base));
+  background-attachment: fixed;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .font-display { font-family: var(--font-display); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--glass-hi); }
+
+.card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  backdrop-filter: blur(16px);
+}
+
+.card-hover {
+  transition: border-color 0.2s, background 0.2s;
+}
+.card-hover:hover {
+  border-color: var(--glass-hi);
+  background: var(--bg-card-hover);
+}
+
+/* ── Rich card system — glass-morphism, matching the reference's `.card` ── */
+.card-rich {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: box-shadow 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+}
+.card-rich.interactive:hover {
+  box-shadow: 0 14px 34px -4px rgba(0,0,0,0.4), 0 2px 8px -2px rgba(0,0,0,0.28);
+  transform: translateY(-1px);
+  border-color: var(--glass-hi);
+}
+
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--accent-blue);
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton {
+  display: block;
+  border-radius: 6px;
+  background: var(--bg-input);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fade-in-up 0.22s ease both; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.badge-green { background: rgba(79,179,160,0.15); color: #4fb3a0; border: 1px solid rgba(79,179,160,0.3); }
+.badge-red { background: rgba(217,105,79,0.15); color: #d9694f; border: 1px solid rgba(217,105,79,0.3); }
+.badge-yellow { background: rgba(224,121,60,0.15); color: #e0793c; border: 1px solid rgba(224,121,60,0.3); }
+.badge-blue { background: rgba(201,162,39,0.15); color: #c9a227; border: 1px solid rgba(201,162,39,0.3); }
+.badge-gray { background: rgba(111,124,150,0.15); color: #a9b3c9; border: 1px solid rgba(111,124,150,0.3); }
+
+.progress-bar {
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c9a227, #e8c766);
+  border-radius: 9999px;
+  transition: width 0.5s ease;
+}
+
+.tab-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.tab-btn:hover { color: var(--text-primary); background: var(--glass-hi); }
+.tab-btn.active { background: rgba(201,162,39,0.2); color: #e8c766; }
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.metric-row:last-child { border-bottom: none; }
+
+.score-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: #c9a227;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.pulse { animation: pulse-glow 1.5s ease-in-out infinite; }
+
+/* Dual-handle 0-100 range slider (ScoreScreener): two stacked native range
+   inputs; only the thumbs receive pointer events so both stay draggable. */
+.dual-range { position: relative; height: 22px; }
+.dual-range-track, .dual-range-fill { position: absolute; top: 9px; height: 4px; border-radius: 2px; }
+.dual-range-track { left: 0; right: 0; background: rgba(255, 255, 255, 0.14); }
+.dual-range-fill { background: var(--accent-blue); }
+.dual-range input[type="range"] {
+  position: absolute; left: 0; top: 0; width: 100%; height: 22px; margin: 0;
+  background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none;
+}
+.dual-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; pointer-events: auto; cursor: grab;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent-gold-bright); border: 2px solid var(--bg-card);
+}
+.dual-range input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; cursor: grab; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent-gold-bright); border: 2px solid var(--bg-card);
+}
+.dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; }
+.dual-range input[type="range"]::-moz-range-track { background: transparent; }

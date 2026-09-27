@@ -1,0 +1,165 @@
+# Declarative screening rule sets — Architecture v2 Stage 2.
+#
+# Every `metric` here must resolve to an id in app/metrics/registry.py
+# (validated at load time in engine.py — a typo fails loudly, not silently
+# as an always-INSUFFICIENT_DATA rule). `operator` is one of <, >, <=, >=,
+# ==, != (the same set app.sectors.base._eval_condition already supports —
+# reused as-is, not reimplemented). `sector` filters the candidate universe
+# to one sector_name (per app/sectors/registry.py's get_framework()); omit
+# it to screen every classified stock regardless of sector.
+
+quality_banks:
+  label: "Quality Banks"
+  description: >
+    Profitable, well-capitalized banks with clean asset quality — a
+    starting-point screen, not a final buy list.
+  sector: Banks
+  rules:
+    - {metric: roe, operator: ">=", value: 12}
+    - {metric: gross_npa, operator: "<=", value: 3}
+    - {metric: capital_adequacy_ratio, operator: ">=", value: 12}
+
+quality_nbfcs:
+  label: "Quality NBFCs"
+  description: >
+    Architecture v2 Stage 8 — proves the same metric_ids (gross_npa,
+    capital_adequacy_ratio) apply to NBFCs as to Banks; thresholds are
+    looser than quality_banks since NBFCs run structurally higher ROE/NPA
+    (higher risk profile, no CASA funding cushion — see
+    app/sectors/nbfc.py's metric descriptions).
+  sector: NBFCs
+  rules:
+    - {metric: roe, operator: ">=", value: 15}
+    - {metric: gross_npa, operator: "<=", value: 4}
+    - {metric: capital_adequacy_ratio, operator: ">=", value: 15}
+
+cheap_quality:
+  label: "Cheap Quality"
+  description: >
+    Above-average return on equity trading at a below-average P/E — sector
+    agnostic, deliberately loose thresholds since it spans every sector.
+  rules:
+    - {metric: roe, operator: ">=", value: 15}
+    - {metric: pe_ratio, operator: "<=", value: 25}
+
+low_leverage_growth:
+  label: "Low-Leverage Growth"
+  description: >
+    Growing revenue without leaning on debt to do it.
+  rules:
+    - {metric: revenue_cagr_3y, operator: ">=", value: 10}
+    - {metric: debt_to_equity, operator: "<=", value: 1}
+
+# P&L Analysis Engine (Milestone 5) — the pl_* metrics are dual-written
+# into the ledger by app/calculations/pl_intelligence/persistence.py's
+# sync_to_metric_ledger(), only for companies whose fundamental analysis
+# has been (re)run since this rollout — a stock with no pl_* rows yet
+# resolves those metrics to INSUFFICIENT_DATA, same as any other metric.
+pl_quality_compounders:
+  label: "P&L Quality Compounders"
+  description: >
+    High P&L Master Score with PAT doubling in a reasonable timeframe —
+    a starting-point screen for the P&L Analysis Engine's headline
+    "premium quality growth" classification, not a final buy list.
+  rules:
+    - {metric: pl_score, operator: ">=", value: 80}
+    - {metric: pl_pat_doubling_years, operator: "<=", value: 8}
+
+pl_high_earnings_quality:
+  label: "P&L High Earnings Quality"
+  description: >
+    Income overwhelmingly driven by core operations, not non-operating
+    other income (dividends, investment gains, etc.) — screens for the
+    Earnings Quality Index threshold the spec itself calls HIGH_QUALITY.
+  rules:
+    - {metric: pl_eqi, operator: ">=", value: 0.90}
+
+pl_low_subsidiary_reliance:
+  label: "P&L Low Subsidiary/Global Reliance"
+  description: >
+    Standalone (parent) revenue closely tracks consolidated revenue — the
+    group-level numbers are broadly representative of the parent operating
+    business, per the spec's own CSR interpretation bands.
+  rules:
+    - {metric: pl_csr, operator: ">=", value: 0.80}
+
+bs_deleveraging_candidates:
+  label: "Balance Sheet Deleveraging Candidates"
+  description: >
+    Low current leverage with strong current capital efficiency — a
+    starting-point screen, not the Balance Sheet spec's literal
+    "debt today vs. debt 3 years ago" comparison (this app's screener rule
+    format only evaluates a single current snapshot, not two points in
+    time, so the spec's own deleveraging TREND condition isn't expressible
+    here yet).
+  rules:
+    - {metric: bs_debt_to_equity, operator: "<=", value: 0.5}
+    - {metric: bs_roce, operator: ">=", value: 15}
+
+bs_strong_liquidity:
+  label: "Balance Sheet Strong Liquidity"
+  description: >
+    Comfortable current and quick ratios — able to meet near-term
+    obligations without relying on inventory liquidation.
+  rules:
+    - {metric: bs_current_ratio, operator: ">=", value: 1.5}
+    - {metric: bs_quick_ratio, operator: ">=", value: 1.0}
+
+bs_low_leverage_high_roce:
+  label: "Balance Sheet Low Leverage, High ROCE"
+  description: >
+    Low balance-sheet leverage combined with high capital efficiency —
+    the Balance Sheet Analysis Engine's own STRONG-archetype-adjacent
+    screen (a coarser starting point than the full archetype
+    classification, usable directly as a filter).
+  rules:
+    - {metric: bs_debt_to_equity, operator: "<=", value: 0.5}
+    - {metric: bs_roce, operator: ">=", value: 18}
+
+bs_clean_balance_sheet:
+  label: "Balance Sheet No Red Flags"
+  description: >
+    Zero currently-triggered red flags from the 12-rule Balance Sheet
+    engine (excludes the 3 permanently-SOURCE_REQUIRED rules, which never
+    count toward this total either way).
+  rules:
+    - {metric: bs_red_flag_count, operator: "==", value: 0}
+
+cf_strong_cash_conversion:
+  label: "Cash Flow Strong Conversion"
+  description: >
+    CFO comfortably exceeds Operating Profit at the latest period, and the
+    3-year cumulative figure confirms it isn't a one-off — the Cash Flow
+    Analysis Engine's own mandatory headline conversion metric, sourced
+    directly from Screener's schedules (not yfinance-derived).
+  rules:
+    - {metric: cf_conversion_ratio_pct, operator: ">=", value: 90}
+    - {metric: cf_cumulative_3y_conversion_pct, operator: ">=", value: 80}
+
+cf_low_capex_intensity:
+  label: "Cash Flow Low Reinvestment Intensity"
+  description: >
+    Capex consumes a modest share of operating cash flow — a starting-point
+    screen for cash-generative, capital-light businesses (CASH_HARVEST/
+    CASH_COMPOUNDER-archetype-adjacent).
+  rules:
+    - {metric: cf_capex_to_cfo_pct, operator: "<=", value: 30}
+
+cf_gross_debt_reduction:
+  label: "Cash Flow Net Debt Repayment"
+  description: >
+    Repaying more gross debt than raising — a literal gross-debt-raised-
+    vs-repaid screen, resolved from a documented Balance Sheet Engine
+    limitation (yfinance only exposes a net debt-issuance figure) once
+    Screener's financing schedule turned out to carry BOTH gross figures
+    separately.
+  rules:
+    - {metric: cf_debt_classification_score, operator: ">=", value: 2}
+
+cf_clean_cash_flow:
+  label: "Cash Flow No Red Flags"
+  description: >
+    Zero currently-triggered red flags from the 5-rule Cash Flow red-flag
+    engine.
+  rules:
+    - {metric: cf_red_flag_count, operator: "==", value: 0}
