@@ -54,7 +54,8 @@ def collect(db) -> list[dict]:
             continue
         full = analysis.scores
         refinement = full.get("refinement", {})
-        quick = quick_score(stock.symbol, analysis.financial_data, stock.sector, stock.industry, stock.basic_industry)
+        quick = quick_score(stock.symbol, analysis.financial_data, stock.sector, stock.industry, stock.basic_industry,
+                            db=db, company_id=stock.id)
         if quick.error:
             out.append({"symbol": stock.symbol, "error": quick.error})
             continue

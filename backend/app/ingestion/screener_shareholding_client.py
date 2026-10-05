@@ -100,7 +100,8 @@ def ingest_screener_shareholding(db: Session, company_id: str, symbol: str) -> d
     """Fetch and store both quarterly and yearly Screener shareholding
     history for `symbol`. Never raises."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_shareholding_client: openscreener not installed", symbol=symbol)
         return {"quarterly_rows": 0, "yearly_rows": 0}
@@ -113,7 +114,7 @@ def ingest_screener_shareholding(db: Session, company_id: str, symbol: str) -> d
         # statement, so Screener returns byte-identical rows either way),
         # but there's no reason to be the one remaining standalone-flagged
         # call in this codebase for a value that doesn't even vary by it.
-        stock = Stock(symbol, consolidated=True)
+        stock = screener_stock(symbol, True)
         quarterly_rows = _ingest_frequency(db, company_id, stock, "quarterly")
         yearly_rows = _ingest_frequency(db, company_id, stock, "yearly")
     except Exception as e:

@@ -61,7 +61,21 @@ def test_screener_ratios_history_falls_back_when_requested_type_is_empty(db):
     `screener_ratios_history()` — full multi-year history per field, not
     just the latest point — the per-field fallback behavior this test
     covers carried over unchanged.)"""
-    company_id = _fixture_company_id(db, "GNFC")
+    # A test-only company holding STANDALONE ratio rows only — the shape GNFC
+    # had on 2026-09-22. GNFC itself has since gained consolidated rows from
+    # the Screener-first quick run, so it no longer exercises the fallback.
+    from datetime import datetime, timezone
+    from app.infrastructure.database import metric_store
+
+    now = datetime.now(timezone.utc)
+    company_id = "TEST:RATIOSONLYSA"
+    db.add(Stock(id=company_id, symbol="RATIOSONLYSA", exchange="TEST", company_name="x", is_active=False,
+                 created_at=now, updated_at=now))
+    db.flush()
+    for period, days in (("2025-03-31", 61.0), ("2026-03-31", 58.0)):
+        metric_store.insert_metric_value(db, company_id=company_id, metric_key="bs_ratio_debtor_days", period=period,
+                                         value=days, unit="days", source="SCREENER", source_tier=2, confidence="MEDIUM",
+                                         statement_type="STANDALONE", reported_or_calculated="REPORTED")
     consolidated = snapshot.screener_ratios_history(db, company_id, "CONSOLIDATED")
     assert consolidated, "expected the STANDALONE-tagged bs_ratio_* rows to be found via fallback"
     assert consolidated == snapshot.screener_ratios_history(db, company_id, "STANDALONE")

@@ -1,0 +1,931 @@
+{%- macro cr(v, d=0) -%}{% if v is none %}–{% else %}{{ "{:,.{p}f}".format(v, p=d) }}{% endif %}{%- endmacro -%}
+{%- macro pct(v, d=1) -%}{% if v is none %}–{% else %}{{ "{:.{p}f}".format(v * 100, p=d) }}%{% endif %}{%- endmacro -%}
+{%- macro chg(v) -%}{% if v is none %}–{% else %}{{ "{:+.1f}".format(v * 100) }}%{% endif %}{%- endmacro -%}
+{%- macro src(nums) -%}{% if nums %}<sup class="cite">{% for n in nums[:6] %}<a href="#s{{ n }}">[{{ n }}]</a>{% endfor %}{% if nums|length > 6 %}…{% endif %}</sup>{% endif %}{%- endmacro -%}
+{%- macro srcline(nums, note="") -%}<p class="srcline">{% if note %}{{ note }} {% endif %}Sources: {% for n in nums %}<a href="#s{{ n }}">[{{ n }}]</a>{% if not loop.last %} {% endif %}{% endfor %}{% if not nums %}none on file{% endif %}</p>{%- endmacro -%}
+{%- macro bar(v, vmax, cls="s1") -%}<span class="bar {{ cls }}" style="width:{{ "%.1f"|format(100 * (v if v and v > 0 else 0) / vmax if vmax else 0) }}%"></span>{%- endmacro -%}
+{%- macro vol(value, unit) -%}{% if value is none %}–{% elif unit == "ratio" %}{{ pct(value) }}{% elif unit in ("million", "thousand tonnes") %}{{ "{:,.2f}".format(value) }}{% else %}{{ "{:,.0f}".format(value) }}{% endif %}{%- endmacro -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ r.stock.company_name }} — Company intelligence report</title>
+<style>
+@font-face { font-family: "Fraunces"; src: url("{{ font_url }}"); font-weight: 100 900; }
+/* The app's editorial report design (frontend/src/components/EditorialReport.tsx): same palette, typefaces, cards, pills and tables. */
+:root {
+  --ink: #17211f; --ink-2: #3f4b48; --ink-3: #66716d; --faint: #8d9994; --rule: #dedfd7; --rule-soft: #ebebe4;
+  --paper: #f5f3ed; --card: #fffdf8; --wash: #f6f5ef; --deep: #123b38; --accent: #1f5d55; --mint: #dceee7; --mint-2: #a8d5c6;
+  --gold: #c79a3b; --gold-soft: #f6ecd4; --coral: #bd624d; --coral-soft: #f8e4dd; --blue: #4d7190; --blue-soft: #e4edf3;
+  --s1: #c79a3b; --s2: #1f5d55; --flag: #c79a3b;
+}
+* { box-sizing: border-box; }
+html { font-size: 9.4pt; }
+body { margin: 0; color: var(--ink); background: #fff; font-family: Inter, ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif; line-height: 1.55; }
+h1, h2, h3, .display { font-family: "Fraunces", Georgia, "Times New Roman", serif; font-weight: 500; letter-spacing: -0.02em; color: var(--deep); }
+a { color: inherit; text-decoration: none; }
+p { margin: 0 0 0.75em; }
+.eyebrow { font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-weight: 800; }
+.muted { color: var(--faint); }
+.cite a { color: var(--accent); font-size: 0.7em; margin-left: 1px; font-weight: 600; }
+.srcline { font-size: 0.76rem; color: var(--ink-3); margin-top: 0.7em; }
+.srcline a { color: var(--accent); font-weight: 600; }
+.pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.5mm 2.4mm; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; vertical-align: 0.3mm; margin-left: 2mm; font-family: Inter, sans-serif; }
+.pill.reported { background: var(--mint); color: #286d5d; } .pill.model { background: var(--blue-soft); color: #426982; }
+.pill.claim { background: var(--gold-soft); color: #795b1d; } .pill.ai { background: var(--coral-soft); color: #9d4e3d; }
+
+.cover { min-height: 258mm; display: flex; flex-direction: column; gap: 5mm; page-break-after: always; }
+.cover .band { background: var(--card); border: 1px solid var(--rule); border-left: 5px solid var(--gold); border-radius: 18px; padding: 9mm 10mm 7mm; }
+.cover h1 { font-size: 3rem; line-height: 1.04; margin: 3mm 0 1.5mm; }
+.cover .sub { color: var(--ink-3); font-size: 1rem; }
+.cover .hero { background: var(--deep); color: #f8f5ea; border-radius: 22px; padding: 9mm 10mm; }
+.cover .hero .eyebrow { color: #e4c474; }
+.cover .standfirst { font-family: "Fraunces", Georgia, serif; font-size: 1.75rem; line-height: 1.22; color: #f8f5ea; max-width: 150mm; margin: 2.5mm 0 4mm; }
+.cover .hero .chips span { display: inline-block; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; padding: 1.2mm 3mm; color: #d5e2dc; font-size: 0.78rem; margin: 0 1.5mm 1.5mm 0; }
+.keyfacts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; }
+.keyfacts > div { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 5mm; }
+.keyfacts .k { font-size: 0.74rem; color: var(--ink-3); }
+.keyfacts .v { font-family: "Fraunces", Georgia, serif; font-size: 1.6rem; margin-top: 1.5mm; white-space: nowrap; color: var(--deep); letter-spacing: -0.03em; }
+.keyfacts .n { font-size: 0.72rem; color: var(--faint); margin-top: 1mm; }
+.status { background: var(--mint); border: 1px solid #c8e2d8; border-radius: 16px; padding: 5mm 6mm; font-size: 0.9rem; }
+.status b { font-weight: 700; color: var(--deep); }
+.cover .contents { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 5mm 6mm; }
+.cover .foot { margin-top: auto; font-size: 0.76rem; color: var(--faint); display: flex; justify-content: space-between; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.part { page-break-before: always; padding: 1mm 0 0; margin-bottom: 6mm; }
+.part h1 { font-size: 2.1rem; margin: 2mm 0 2mm; }
+.part p { color: var(--ink-3); max-width: 150mm; font-size: 1rem; }
+section { margin-bottom: 6mm; background: var(--card); border: 1px solid var(--rule); border-radius: 18px; padding: 6mm 6.5mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+section > h2 { font-size: 1.4rem; margin: 0 0 1mm; }
+section > h2::before { content: ""; display: block; height: 3px; width: 9mm; border-radius: 4px; background: var(--gold); margin-bottom: 3mm; }
+section > .q { color: var(--ink-3); font-size: 0.9rem; margin-bottom: 4mm; }
+h3 { font-size: 1.05rem; margin: 6mm 0 2mm; }
+h2, h3, section > .q, .chart .title, .legend { break-after: avoid; }
+thead { display: table-header-group; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+th { text-align: right; font-weight: 800; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); padding: 2.4mm 2.4mm; background: var(--wash); border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+td { text-align: right; padding: 2.2mm 2.4mm; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+th:first-child, td:first-child { text-align: left; }
+td:first-child { font-weight: 600; color: var(--deep); }
+td.l, th.l { text-align: left; }
+tr.subject td { background: var(--mint); font-weight: 700; }
+.exhibits { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm 6mm; }
+.exhibits figure { margin: 0; break-inside: avoid; }
+.exhibits figcaption { font-size: 0.72rem; color: var(--ink-3); margin-top: 1mm; }
+.exhibits .t { font-family: "Fraunces", Georgia, serif; font-size: 0.98rem; color: var(--deep); } .exhibits .u { font-size: 0.72rem; color: var(--faint); margin-bottom: 1mm; }
+.exhibits svg { width: 100%; height: auto; display: block; }
+table.trend th, table.trend td { font-size: 0.7rem; padding-left: 1mm; padding-right: 1mm; }
+table.trend { break-inside: avoid; }
+h3 { break-after: avoid; }
+td.nw { white-space: nowrap; }
+tr.total td { border-top: 1px solid var(--deep); font-weight: 700; color: var(--deep); }
+tr { page-break-inside: avoid; }
+.neg { color: var(--coral); }
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+.kv { display: grid; grid-template-columns: 46mm 1fr; row-gap: 1.8mm; font-size: 0.9rem; }
+.kv dt { color: var(--ink-3); } .kv dd { margin: 0; color: var(--deep); font-weight: 600; }
+.callout { background: var(--mint); border: 1px solid #c8e2d8; border-radius: 14px; padding: 4.5mm 5.5mm; margin: 4mm 0; font-family: "Fraunces", Georgia, serif; font-size: 1.1rem; line-height: 1.4; color: var(--deep); page-break-inside: avoid; }
+.note { background: var(--blue-soft); border: 1px solid #c6dbe7; border-radius: 14px; padding: 4mm 5mm; font-size: 0.88rem; color: #36566b; page-break-inside: avoid; }
+.claim { background: var(--gold-soft); border: 1px solid #ead9ad; border-radius: 14px; padding: 3.5mm 4.5mm; margin: 0 0 3mm; font-size: 0.9rem; color: #57451f; page-break-inside: avoid; }
+.tag { display: inline-block; font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 800; border-radius: 999px; background: #fff; border: 1px solid #ead9ad; padding: 0.3mm 2mm; color: #795b1d; margin-right: 1mm; }
+
+.chart { page-break-inside: avoid; margin: 4mm 0 1mm; }
+.chart .title { font-family: "Fraunces", Georgia, serif; color: var(--deep); font-size: 1rem; margin-bottom: 2mm; }
+.row { display: grid; grid-template-columns: 52mm 1fr; align-items: center; column-gap: 3mm; padding: 1.2mm 0; }
+.row .name { font-size: 0.84rem; color: var(--ink-2); }
+.track { display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--rule); }
+.line { display: flex; align-items: center; gap: 2mm; height: 3.8mm; }
+.bar { display: inline-block; height: 100%; border-radius: 0 4px 4px 0; min-width: 1px; }
+.bar.s1 { background: linear-gradient(90deg, #d5b35c, var(--gold)); } .bar.s2 { background: var(--accent); }
+.val { font-size: 0.76rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.legend { display: flex; gap: 5mm; font-size: 0.78rem; color: var(--ink-2); margin-bottom: 2mm; }
+.legend i { display: inline-block; width: 3mm; height: 3mm; border-radius: 999px; margin-right: 1.5mm; vertical-align: -0.3mm; }
+
+.register td { font-size: 0.78rem; text-align: left; }
+.register td.n { width: 9mm; color: var(--accent); font-weight: 700; }
+.register .url { color: var(--accent); word-break: break-all; font-size: 0.72rem; }
+.ok { color: #286d5d; } .bad { color: var(--coral); }
+.toc td { border-bottom: 1px solid var(--rule-soft); font-size: 0.92rem; text-align: left; padding: 2mm 0; }
+.toc td:first-child { width: 12mm; color: var(--gold); font-weight: 800; }
+.toc td:nth-child(2) { color: var(--deep); font-weight: 600; width: 44mm; }
+.toc td:last-child { color: var(--ink-3); }
+</style>
+</head>
+<body>
+{% set lf = r.latest_fy %}
+<div class="cover">
+  <div class="band">
+    <div style="display:flex; justify-content:space-between"><div class="eyebrow">Institutional research · Deep report</div><div class="eyebrow" style="color:var(--faint)">{{ r.generated.strftime("%d %B %Y") }}</div></div>
+    <h1>{{ r.identity.company_name or r.stock.company_name }}</h1>
+    <div class="sub">{{ r.classification|join(" · ") }}</div>
+  </div>
+  <div class="hero">
+    <div class="eyebrow">Sector first, then the company · {{ r.generated.strftime("%d %B %Y") }}</div>
+    <div class="standfirst">
+      {%- if r.segments %}{% set t = r.segments[0].top %}{{ t.name }} earns {{ pct(t.result_share, 0) }} of segment profit on {{ pct(t.revenue_share, 0) }} of segment revenue.
+      {%- elif r.single_segment %}One reportable segment: {{ r.single_segment }}.
+      {%- else %}What the filings establish about the business.{% endif %}
+    </div>
+    <div class="chips"><span>NSE · {{ r.stock.symbol }}</span>{% if r.basic_industry %}<span>{{ r.basic_industry }}</span>{% endif %}{% if r.basis %}<span>{{ r.basis }} accounts</span>{% endif %}{% if r.cutoff %}<span>Results through {{ r.cutoff.strftime("%b %Y") }}</span>{% endif %}<span>{{ r.evidence.facts }} sourced facts</span></div>
+  </div>
+  <div class="keyfacts">
+    <div><div class="k">Market value</div><div class="v">₹{{ cr(r.identity.market_cap / 1e7 if r.identity.market_cap else none) }} cr</div><div class="n">{{ r.identity.as_of.strftime("%d %b %Y") if r.identity.as_of else "" }}{{ src(r.identity_cites[:1]) }}</div></div>
+    <div><div class="k">{{ lf.label if lf else "Revenue" }} revenue</div><div class="v">₹{{ cr(lf.revenue if lf else none) }} cr</div><div class="n">{{ chg(lf.revenue_growth if lf else none) }} on the year{{ src(lf.cites[:1] if lf else []) }}</div></div>
+    <div><div class="k">{{ lf.label if lf else "" }} profit after tax</div><div class="v">₹{{ cr(lf.profit if lf else none) }} cr</div><div class="n">{{ r.basis }}, as reported</div></div>
+    <div><div class="k">Reportable segments</div><div class="v">{{ r.segments[0].rows|length if r.segments else 1 }}</div><div class="n">{{ r.basic_industry }}</div></div>
+  </div>
+  <div class="status">
+    <b>What this edition is.</b> The documented facts, the business model, the sector layer, a rule-based forecast and valuation, and an assessment. Every figure is read from a primary filing archived on
+    {{ r.generated.strftime("%d %B %Y") }}, cited by number to the source register at the back, and re-checked against the archived copy.
+    Parts I and II are reported facts; Part III is a rule-based model with every assumption stated. Nothing here is a recommendation.
+    The sector comes first, then the company.
+  </div>
+<div class="contents">
+  <div class="eyebrow">Contents</div>
+  <table class="toc">
+    <tr><td>I</td><td>The sector</td><td>Classification, comparable companies, how revenue is built, industry output, industry benchmarks, the economic backdrop</td></tr>
+    <tr><td>II</td><td>The company</td><td>Identity, what the business does, group structure, segment economics, reported results, cash and capital, management guidance, items that distort comparisons, market-share claims</td></tr>
+    <tr><td>III</td><td>Forecast and valuation</td><td>Assumptions, three scenarios, discounted cash flow, sum of the parts, peer multiple, sensitivity</td></tr>
+    <tr><td>IV</td><td>The assessment</td><td>Five questions, risk register, what would change the view, monitoring checklist</td></tr>
+    <tr><td>V</td><td>Evidence</td><td>Verification summary, source register, definitions</td></tr>
+  </table>
+</div>
+  <div class="foot">
+    <span>NSE: {{ r.stock.symbol }}{% if r.identity.isin %} · ISIN {{ r.identity.isin }}{% endif %} · ₹ crore unless shown otherwise</span>
+    <span>Financials through {{ r.cutoff.strftime("%d %B %Y") if r.cutoff else "–" }} · Generated {{ r.generated.strftime("%d %B %Y") }}</span>
+  </div>
+</div>
+
+
+
+<div class="part">
+  <div class="eyebrow">01 · Part I<span class="pill reported">Reported</span></div>
+  <h1>The sector</h1>
+  <p>Where {{ r.stock.company_name }} sits, who it is measured against, and the economy those companies operate in.</p>
+</div>
+
+<section>
+  <h2>Classification</h2>
+  <div class="q">How the exchange classifies the business</div>
+  <dl class="kv">
+    <dt>Industry classification</dt><dd>{{ r.classification|join("  ›  ") }}</dd>
+    <dt>Basic industry (NSE)</dt><dd>{{ r.basic_industry }}{{ src(r.identity_cites[-1:]) }}</dd>
+    {% if r.index %}<dt>Broadest index</dt><dd>{{ r.index }}</dd>{% endif %}
+  </dl>
+</section>
+
+<section>
+  <h2>Comparable companies</h2>
+  <div class="q">{% if r.peers_by_segment %}Each reported segment is matched to its NSE basic industry; the largest companies classified there are that segment's peers.{% else %}Largest listed companies in the same basic industry, then the same industry.{% endif %} Each row is that company's own latest full-year filing.</div>
+  {% if r.peers|length > 1 %}
+  <table>
+    <tr><th>Company</th>{% if r.peers_by_segment %}<th class="l">Peer for segment</th>{% endif %}<th class="l">Basic industry</th><th>Year</th><th>Market value</th><th>Revenue</th><th>Growth</th><th>Profit after tax</th><th>Net margin</th><th>Segments</th><th class="l">Source</th></tr>
+    {% for p in r.peers %}
+    <tr class="{{ 'subject' if p.is_subject }}"><td>{{ p.name }}</td>{% if r.peers_by_segment %}<td class="l">{{ p.for_segment or ("Whole company" if p.is_subject else "–") }}</td>{% endif %}<td class="l">{{ p.basic_industry or "–" }}</td><td>{{ p.year }}</td><td>{{ cr(p.market_cap) }}</td><td>{{ cr(p.revenue) }}</td><td>{{ chg(p.growth) }}</td><td class="{{ 'neg' if p.profit is not none and p.profit < 0 }}">{{ cr(p.profit) }}</td><td>{{ pct(p.margin) }}</td><td>{{ p.segments or ("–" if p.from_screener else 1) }}</td><td class="l">{% if p.from_screener %}<a href="{{ p.screener_url }}" style="color:var(--accent)">Screener</a>{% else %}{{ src(p.cites) }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="srcline">₹ crore. Consolidated figures where the company files them. Revenue is the headline line of each filing (interest earned for lenders, gross premium for insurers).{% if r.peers|selectattr("from_screener")|list %} A peer marked “Screener” has no exchange filing on file here: its figures are the four quarters to the year shown as transcribed by Screener.in, are not checked against a filing, and are not used in the valuation.{% endif %} {% if r.peers_by_segment %}A peer's figures are for its whole company, not only the matching business.{% else %}Peers share the company's exchange classification.{% endif %}</p>
+  {% set vmax = r.peers|map(attribute="margin")|select("number")|max if r.peers|map(attribute="margin")|select("number")|list else 0 %}
+  <div class="chart">
+    <div class="title">Net margin, latest full year</div>
+    {% for p in r.peers %}<div class="row"><div class="name">{{ p.name }}</div><div class="track"><div class="line">{{ bar(p.margin, vmax) }}<span class="val">{{ pct(p.margin) }}</span></div></div></div>{% endfor %}
+  </div>
+  {% else %}
+  <div class="note">No comparable company with a results filing on NSE was found for this classification.</div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>How revenue is built in this sector</h2>
+  <div class="q">The framework the forecast in Phase 4 will follow. It is a way of reading the business, not a set of numbers.</div>
+  <div class="callout">{{ r.driver.equation }}</div>
+  <p>What moves it: {{ r.driver.drivers|join(" · ") }}.</p>
+</section>
+
+{% if r.insurers %}
+{% set general = r.insurers|selectattr("combined_ratio", "number")|list|length > 0 %}
+<section>
+  <h2>Insurer measures</h2>
+  <div class="q">Premium written, what it costs to write, and the capital behind it, from each insurer's own year-end filing</div>
+  <table>
+    <tr><th>Insurer</th><th>Year</th><th>Gross premium</th><th>Growth</th><th>Profit after tax</th><th>Return on equity</th>{% if general %}<th>Claims ratio</th><th>Expense ratio</th><th>Combined ratio</th><th>Premium retained</th>{% else %}<th>Expense ratio</th><th>Policies kept after 13 months</th><th>After 61 months</th>{% endif %}<th>Solvency (times)</th><th class="l">Source</th></tr>
+    {% for b in r.insurers %}<tr class="{{ 'subject' if b.is_subject }}"><td>{{ b.name }}</td><td>{{ b.year }}</td><td>{{ cr(b.premium) }}</td><td>{{ chg(b.growth) }}</td><td class="{{ 'neg' if b.profit is not none and b.profit < 0 }}">{{ cr(b.profit) }}</td><td>{{ pct(b.return_on_equity) }}</td>{% if general %}<td>{{ pct(b.claims_ratio) }}</td><td>{{ pct(b.expense_ratio) }}</td><td class="{{ 'neg' if b.combined_ratio is not none and b.combined_ratio > 1 }}">{{ pct(b.combined_ratio) }}</td><td>{{ pct(b.retention_ratio) }}</td>{% else %}<td>{{ pct(b.expense_ratio) }}</td><td>{{ pct(b.persistency_13th_month) }}</td><td>{{ pct(b.persistency_61st_month) }}</td>{% endif %}<td>{{ "%.2f"|format(b.solvency_multiple) if b.solvency_multiple is not none else "–" }}</td><td class="l">{{ src(b.cites) }}</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">₹ crore. {% if general %}Claims ratio is incurred claims ÷ net earned premium; expense ratio is commission and operating expenses ÷ net premium written; the combined ratio is their sum, and above 100% the insurer loses money on underwriting before investment income. Premium retained is the share not passed to reinsurers.{% else %}Expense ratio is commission and operating expenses ÷ gross premium. Policies kept is the persistency ratio each insurer files.{% endif %} Return on equity uses year-end share capital and reserves. Solvency is available capital as a multiple of the capital the regulator requires; insurers file it on different scales, restated here on one.</p>
+</section>
+{% endif %}
+
+{% if r.lenders %}
+<section>
+  <h2>Lender measures</h2>
+  <div class="q">Capital, asset quality, funding and efficiency, from each bank's own standalone year-end filing</div>
+  <table>
+    <tr><th>Bank</th><th>Year</th><th>Advances</th><th>Deposits</th><th>Advances ÷ deposits</th><th>Core capital ratio</th><th>Gross bad loans</th><th>Net bad loans</th><th>Return on assets</th><th>Cost ÷ income</th><th>Credit cost</th><th class="l">Source</th></tr>
+    {% for b in r.lenders %}<tr class="{{ 'subject' if b.is_subject }}"><td>{{ b.name }}</td><td>{{ b.year }}</td><td>{{ cr(b.advances) }}</td><td>{{ cr(b.deposits) }}</td><td>{{ pct(b.cd) }}</td><td>{{ pct(b.cet1) }}</td><td>{{ pct(b.gnpa, 2) }}</td><td>{{ pct(b.nnpa, 2) }}</td><td>{{ pct(b.roa, 2) }}</td><td>{{ pct(b.cti) }}</td><td>{{ pct(b.credit_cost, 2) }}</td><td class="l">{{ src(b.cites) }}</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">₹ crore. Core capital is the common equity tier 1 ratio. Bad loans are non-performing assets as a share of advances. Credit cost is provisions other than tax ÷ year-end advances. Standalone, as lenders report these ratios for the bank alone.</p>
+</section>
+{% endif %}
+
+<section>
+  <h2>Industry output</h2>
+  <div class="q">How much the industry itself is producing, from government production indices: the backdrop against which the company's own growth should be read</div>
+  {% if r.output.rows %}
+  {% set years = r.output.rows|map(attribute="years")|select|first %}
+  {% if years %}
+  <table>
+    <tr><th>For</th><th class="l">Production index group</th>{% for y in years %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    {% for o in r.output.rows if o.years %}<tr><td>{{ o.label }}</td><td class="l">{{ o.group|replace("Manufacture of ", "")|truncate(48) }}</td>{% for y in o.years %}<td>{{ chg(y.growth) }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  <p class="srcline">Year-on-year change in the Index of Industrial Production for the industry group (base 2011-12). It measures physical output of the whole industry, organised and unorganised, not revenue and not any one company.</p>
+  {% endif %}
+  {% set cores = [] %}{% for o in r.output.rows %}{% for c in o.core %}{% if cores.append(c) %}{% endif %}{% endfor %}{% endfor %}
+  {% if cores %}
+  <h3>Core industries</h3>
+  <table>
+    <tr><th>Series</th><th>Latest full year</th><th>Change</th><th>Year to date</th><th>Change on the same months a year earlier</th></tr>
+    {% for c in cores %}<tr><td>{{ c.name }}</td><td>{{ c.annual.label if c.annual else "–" }}</td><td>{{ chg(c.annual.growth) if c.annual else "–" }}</td><td>{{ c.ytd.label if c.ytd else "–" }}</td><td>{{ chg(c.ytd.growth) if c.ytd else "–" }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  {{ srcline(r.output.cites, "Ministry of Statistics (industrial production) and the Office of the Economic Adviser (eight core industries).") }}
+  {% else %}
+  <div class="note">No government production index maps to this classification. The indices cover mining, manufacturing and electricity; services, finance, software, construction and trade are not measured by them.</div>
+  {% endif %}
+</section>
+
+{% for vb in r.volumes %}
+<section>
+  <h2>{{ vb.sector }}: latest volumes</h2>
+  <div class="q">{{ {"Vehicles": "Retail sales by category, from government registration data", "Telecom": "Mobile subscribers and each operator's share", "Aviation": "Passengers and freight handled at all Indian airports", "Mutual funds": "Assets managed and money flowing in", "Life insurance": "Premium from new policies written in the month", "General insurance": "Gross premium written since the financial year began in April", "Power": "Electricity generated across India by source, and how hard thermal plants ran"}.get(vb.sector, "Latest figures") }}, {{ vb.period.strftime("%B %Y") }}</div>
+  <table>
+    <tr><th>Measure</th><th class="l">Category</th><th>{{ vb.period.strftime("%b %Y") }}</th><th>Change on a year earlier</th>{% if vb.rows|selectattr("share")|list %}<th>Market share, year to date</th>{% endif %}<th>Read from</th></tr>
+    {% for v in vb.rows %}<tr{% if v.own %} class="subject"{% endif %}><td>{{ v.measure|capitalize }}</td><td class="l">{{ v.label }}</td><td class="nw">{% if v.unit == "INR crore" %}₹{{ "{:,.0f}".format(v.value) }} crore{% else %}{{ vol(v.value, v.unit) }}{% if v.unit in ("million", "thousand tonnes") %} {{ v.unit }}{% endif %}{% endif %}</td><td>{{ chg(v.change) }}</td>{% if vb.rows|selectattr("share")|list %}<td>{{ pct(v.share) }}</td>{% endif %}<td>{{ v.where }}</td></tr>{% endfor %}
+  </table>
+  {% if vb.trend %}
+  <h3>The last {{ vb.months|length }} monthly releases</h3>
+  <table class="trend">
+    <tr><th class="l">Series</th>{% for m in vb.months %}<th>{{ m }}</th>{% endfor %}</tr>
+    {% for t in vb.trend %}<tr><td class="l">{{ t.heading }}</td>{% for value in t["values"] %}<td>{{ vol(value, t.unit) }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  {% endif %}
+  {{ srcline(vb.cites, ("Industry-wide figures from the sector body's monthly releases" ~ (", with this company's own row highlighted" if vb.rows|selectattr("own")|list else ", not this company's own volumes") ~ ".") ~ (" Operator shares are computed from the regulator's subscriber table." if vb.sector == "Telecom" else "") ~ (" General insurance premium is a running total that restarts each April, so the March column is a full year." if vb.sector == "General insurance" else "") ~ (" A dash marks a month whose release was not published or did not carry that figure." if vb.trend else "")) }}
+</section>
+{% endfor %}
+
+<section>
+  <h2>Industry benchmarks</h2>
+  <div class="q">Averages for Indian listed companies in the closest industry group, for the company and for each segment</div>
+  {% if r.benchmarks.rows %}
+  <table>
+    <tr><th>For</th><th class="l">NSE basic industry</th><th class="l">Benchmark group</th><th>Firms</th><th>Net margin</th><th>EBITDA margin</th><th>Beta</th><th>Cost of capital (₹)</th><th>Trailing P/E</th><th>EV ÷ EBITDA</th></tr>
+    {% for b in r.benchmarks.rows %}<tr><td>{{ b.label }}</td><td class="l">{{ b.nse or "–" }}</td><td class="l">{{ b.matched }}</td><td>{{ "%d"|format(b.firms) if b.firms is not none else "–" }}</td><td>{{ pct(b.net_margin) }}</td><td>{{ pct(b.ebitda_margin) }}</td><td>{{ "%.2f"|format(b.beta) if b.beta is not none else "–" }}</td><td>{{ pct(b.cost_of_capital_inr) }}</td><td>{{ "%.1f"|format(b.trailing_pe) if b.trailing_pe is not none else "–" }}</td><td>{{ "%.1f"|format(b.ev_ebitda) if b.ev_ebitda is not none else "–" }}</td></tr>{% endfor %}
+  </table>
+  {{ srcline(r.benchmarks.cites, "Damodaran's India industry averages" ~ (", updated " ~ r.benchmarks.as_of.strftime("%d %b %Y") if r.benchmarks.as_of else "") ~ ". Third-party aggregates under his industry names; the benchmark group shown is the closest match to the NSE classification, and a group with few firms is a weak benchmark.") }}
+  {% else %}<div class="note">No benchmark group matches this classification.</div>{% endif %}
+</section>
+
+<section>
+  <h2>Economic backdrop</h2>
+  <div class="q">The cost of money and the growth the IMF projects</div>
+  <div class="cols">
+    <div>
+      {% if r.macro.yields %}
+      <div class="chart">
+        <div class="title">Government bond yields, {{ r.macro.yield_date.strftime("%d %b %Y") }}</div>
+        {% set ymax = r.macro.yields|map(attribute="value")|max %}
+        {% for y in r.macro.yields %}<div class="row" style="grid-template-columns: 24mm 1fr"><div class="name">{{ y.tenor }}</div><div class="track"><div class="line">{{ bar(y.value, ymax) }}<span class="val">{{ "%.2f"|format(y.value) }}%</span></div></div></div>{% endfor %}
+      </div>
+      {{ srcline(r.macro.yield_cites, "Central government securities, yield to maturity.") }}
+      {% else %}<div class="note">Bond yield table unavailable at build time.</div>{% endif %}
+    </div>
+    <div>
+      {% if r.macro.years %}
+      <table>
+        <tr><th>IMF, India</th>{% for y in r.macro.years %}<th>{{ y }}</th>{% endfor %}</tr>
+        {% for s in r.macro.series %}<tr><td>{{ s.label }}</td>{% for v in s["values"] %}<td>{% if v.value is not none %}{{ "%.1f"|format(v.value) }}{{ "p" if v.projection }}{% else %}–{% endif %}</td>{% endfor %}</tr>{% endfor %}
+      </table>
+      {{ srcline(r.macro.imf_cites, "p = IMF projection. The IMF reports India by fiscal year (year t = April t to March t+1).") }}
+      {% endif %}
+      {% if r.ten_year %}<div class="callout">The ten-year government bond yields {{ "%.2f"|format(r.ten_year.value) }}%. That is the starting point for any discount rate applied to the sector in Phase 4.</div>{% endif %}
+    </div>
+  </div>
+</section>
+
+<div class="part">
+  <div class="eyebrow">02 · Part II<span class="pill reported">Reported</span><span class="pill claim">Company statements</span></div>
+  <h1>The company</h1>
+  <p>What {{ r.stock.company_name }}'s own filings establish: who it is, what it does, how its segments earn, what it reported, and which items make one year hard to compare with the next.</p>
+</div>
+
+<section>
+  <h2>Identity and listing</h2>
+  <div class="q">The legal and market perimeter</div>
+  <dl class="kv">
+    <dt>Name</dt><dd>{{ r.identity.company_name or r.stock.company_name }}</dd>
+    <dt>Symbol and ISIN</dt><dd>NSE: {{ r.stock.symbol }}{% if r.identity.isin %} · {{ r.identity.isin }}{% endif %}</dd>
+    <dt>Listed on NSE</dt><dd>{{ r.identity.listing_date or "–" }}</dd>
+    <dt>Shares outstanding</dt><dd>{{ cr(r.identity.shares_outstanding / 1e7 if r.identity.shares_outstanding else none, 2) }} crore{% if r.identity.face_value %}, face value ₹{{ "%g"|format(r.identity.face_value) }}{% endif %}</dd>
+    <dt>Last price and market value</dt><dd>₹{{ cr(r.identity.last_price, 2) }} · ₹{{ cr(r.identity.market_cap / 1e7 if r.identity.market_cap else none) }} crore{% if r.identity.free_float_market_cap %} (free float ₹{{ cr(r.identity.free_float_market_cap / 1e7) }} crore){% endif %}</dd>
+  </dl>
+  {{ srcline(r.identity_cites, "Price and share count as of " ~ (r.identity.as_of.strftime("%d %b %Y") if r.identity.as_of else "build date") ~ ".") }}
+</section>
+
+<section>
+  <h2>What the business does</h2>
+  <div class="q">The company's own description of its activities, markets and customers</div>
+  {% if r.business.available %}
+  {% if r.business.activities %}
+  <table>
+    <tr><th>Business activity ({{ r.business.fy }})</th><th class="l">Group</th><th>Share of turnover</th></tr>
+    {% for a in r.business.activities %}<tr><td>{{ a.name }}</td><td class="l">{{ a.group or "–" }}</td><td>{{ pct(a.share) }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  <div class="cols" style="margin-top:5mm">
+    <dl class="kv">
+      <dt>Markets served</dt><dd>{{ "%d"|format(r.business.states) if r.business.states is not none else "–" }} Indian states and territories · {{ "%d"|format(r.business.countries) if r.business.countries is not none else "–" }} countries</dd>
+      <dt>Exports</dt><dd>{{ pct(r.business.export_share) }} of turnover</dd>
+      {% for f in r.business.footprint %}<dt>{{ f.label }}</dt><dd>{{ f.count }}</dd>{% endfor %}
+      <dt>Reporting boundary</dt><dd>{{ r.business.boundary or "–" }}</dd>
+    </dl>
+    <div>
+      {% if r.business.products %}
+      <table>
+        <tr><th>Product or service</th><th>Industry code</th><th>Share</th></tr>
+        {% for p in r.business.products %}<tr><td>{{ p.name|truncate(60) }}</td><td>{{ p.nic or "–" }}</td><td>{{ pct(p.share) }}</td></tr>{% endfor %}
+      </table>
+      {% endif %}
+    </div>
+  </div>
+  {% if r.business.customers %}<h3>Customers, in the company's words</h3><p>{{ r.business.customers|truncate(900) }}</p>{% endif %}
+  {% if r.business.concentration %}
+  <h3>Concentration of sales and purchases</h3>
+  <table>
+    <tr><th>Measure</th><th>Reported</th></tr>
+    {% for c in r.business.concentration %}<tr><td>{{ c.label }}</td><td>{{ pct(c.value) if c.is_ratio else cr(c.value) }}</td></tr>{% endfor %}
+  </table>
+  {% if r.business.concentration|map(attribute="value")|select("number")|sum == 0 %}<p class="srcline">The company reported zero in every one of these fields; read that as "not disclosed in this form", not as evidence of no concentration.</p>{% endif %}
+  {% endif %}
+  {{ srcline(r.business.cites, "Business Responsibility and Sustainability Report, " ~ (r.business.boundary or "") ~ ".") }}
+  {% else %}
+  <div class="note">No Business Responsibility and Sustainability Report data file is on NSE for this company (it is mandatory only for the 1,000 largest). The business description will come from the annual report in Phase 2.</div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Group structure</h2>
+  <div class="q">Subsidiaries, associates and joint ventures, and how much of each is owned</div>
+  {% if r.group.entities %}
+  {% if r.group.location %}<p>{{ r.group.location }}.</p>{% endif %}
+  <table>
+    <tr><th>Entity</th><th class="l">Relationship</th><th>Held</th><th>PDF page</th></tr>
+    {% for e in r.group.entities[:45] %}<tr><td>{{ e.name }}</td><td class="l">{{ e.relationship }}</td><td>{{ pct(e.held, 0) if e.held is not none else "–" }}</td><td>{{ e.page or "–" }}</td></tr>{% endfor %}
+  </table>
+  {% if r.group.entities|length > 45 %}<p class="srcline">{{ r.group.entities|length - 45 }} further entities are in the archived source.</p>{% endif %}
+  {% if r.group.entities|selectattr("from_table")|list %}<p class="srcline">Rows with a page number were read from the annual report's table by a layout-sensitive reader: treat the holding percentages as medium confidence until Phase 2 re-reads them.</p>{% endif %}
+  {{ srcline(r.group.cites) }}
+  {% elif r.group.none_statement %}
+  <div class="callout">“{{ r.group.none_statement }}”</div>
+  {{ srcline(r.group.cites, "Annual report, PDF page " ~ r.group.none_page ~ ".") }}
+  {% elif r.group.location %}
+  <div class="note">{{ r.group.location }}. The entity names and holdings could not be read from that layout by the table reader; Phase 2 reads them from these pages.</div>
+  {{ srcline(r.group.cites) }}
+  {% else %}
+  <div class="note">No list of group entities was found in the filings on file.</div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Segment economics</h2>
+  <div class="q">Which parts of the business bring in the revenue, and which earn the profit</div>
+  {% if r.segments %}
+  {% for t in r.segments %}
+  <h3>{{ t.label }}, {{ t.basis|title }}</h3>
+  <table>
+    <tr><th>Segment</th><th>Revenue</th><th>Growth</th><th>Result</th><th>Growth</th><th>Margin</th><th>Share of revenue</th><th>Share of result</th><th>Capital employed</th><th>Return on it</th></tr>
+    {% for s in t.rows %}<tr><td>{{ s.name }}</td><td>{{ cr(s.revenue) }}</td><td>{{ chg(s.revenue_growth) }}</td><td class="{{ 'neg' if s.result is not none and s.result < 0 }}">{{ cr(s.result) }}</td><td>{{ chg(s.result_growth) }}</td><td>{{ pct(s.margin) }}</td><td>{{ pct(s.revenue_share) }}</td><td>{{ pct(s.result_share) }}</td><td>{{ cr(s.capital_employed) }}</td><td>{{ pct(s.return_on_capital, 0) }}</td></tr>{% endfor %}
+    <tr class="total"><td>Business segments</td><td>{{ cr(t.rows|map(attribute="revenue")|select("number")|sum) }}</td><td></td><td>{{ cr(t.rows|map(attribute="result")|select("number")|sum) }}</td><td></td><td></td><td></td><td></td><td>{{ cr(t.rows|map(attribute="capital_employed")|select("number")|sum) }}</td><td></td></tr>
+  </table>
+  {{ srcline(t.cites, "₹ crore, before inter-segment elimination. Result is segment profit before tax and finance costs. Capital employed is segment assets less segment liabilities at year end.") }}
+  {% if loop.first %}
+  <div class="callout">{{ t.top.name }} brings in {{ pct(t.top.revenue_share, 0) }} of segment revenue and {{ pct(t.top.result_share, 0) }} of segment result.</div>
+  <div class="chart">
+    <div class="title">Share of segment revenue against share of segment result, {{ t.label }}</div>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Share of revenue</span><span><i style="background:var(--s2)"></i>Share of result</span></div>
+    {% for s in t.rows %}<div class="row"><div class="name">{{ s.name }}</div><div class="track"><div class="line">{{ bar(s.revenue_share, 1) }}<span class="val">{{ pct(s.revenue_share, 0) }}</span></div><div class="line">{{ bar(s.result_share, 1, "s2") }}<span class="val">{{ pct(s.result_share, 0) }}</span></div></div></div>{% endfor %}
+  </div>
+  <h3>Segment margin by year</h3>
+  <table>
+    <tr><th>Segment</th>{% for y in t.years %}<th>{{ y }}</th>{% endfor %}</tr>
+    {% for h in t.history %}<tr><td>{{ h.name }}</td>{% for y in t.years %}{% set m = h.series|selectattr("label", "equalto", y)|map(attribute="margin")|first %}<td>{{ pct(m) }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  <p class="srcline">Segment result ÷ segment revenue, from each year's own year-end filing. A segment renamed or regrouped between years appears only for the years it was reported under that name.</p>
+  {% endif %}
+  {% endfor %}
+  {% elif r.insurer_lines %}
+  {% set il = r.insurer_lines %}
+  <table>
+    <tr><th class="l">Line of business</th><th>Net premium, {{ il.year }}</th><th>Share</th>{% if il.has_growth %}<th>Growth</th>{% endif %}<th>{{ il.result_label }}</th><th>{{ il.result_label }} ÷ premium</th></tr>
+    {% for l in il.rows %}<tr><td class="l">{{ l.name }}</td><td>{{ cr(l.premium) }}</td><td>{{ pct(l.share) }}</td>{% if il.has_growth %}<td>{{ chg(l.growth) }}</td>{% endif %}<td class="{{ 'neg' if l.result is not none and l.result < 0 }}">{{ cr(l.result) }}</td><td>{{ pct(l.margin) }}</td></tr>{% endfor %}
+  </table>
+  {{ srcline(il.cites, "₹ crore, " ~ il.basis|lower ~ ". Net premium is after reinsurance. " ~ ("The underwriting result is before investment income, so a negative figure is usual for lines that earn their profit on the float." if il.result_label == "Underwriting result" else "Surplus is what each fund generated in the year before transfers to shareholders; it is not profit.")) }}
+  {% else %}
+  <div class="note">The company reports a single segment{% if r.single_segment %}: “{{ r.single_segment }}”{{ src(r.single_cites) }}{% endif %}. Its filings therefore carry no segment revenue or profit; any product or geography split has to come from the activity table above or from investor presentations (Phase 2).</div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Reported results</h2>
+  <div class="q">Full-year and recent quarterly figures as filed with the exchange ({{ r.basis }})</div>
+  {% if r.annual %}
+  {% set yrs = r.annual|reverse|list %}
+  {% set has_excise = yrs|map(attribute="excise")|select("number")|list %}
+  <table>
+    <tr><th>₹ crore</th>{% for y in yrs %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    <tr><td>{{ {"InterestEarned": "Interest earned", "GrossPremiumIncome": "Gross premium", "GrossPremiumsWritten": "Gross premium written"}.get(yrs[-1].revenue_label, "Revenue from operations") }}</td>{% for y in yrs %}<td>{{ cr(y.revenue) }}</td>{% endfor %}</tr>
+    {% if has_excise %}
+    <tr><td>Excise duty expensed</td>{% for y in yrs %}<td>{{ cr(y.excise) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Revenue net of excise</td>{% for y in yrs %}<td>{{ cr(y.net_revenue) }}</td>{% endfor %}</tr>
+    {% endif %}
+    <tr><td>Other income</td>{% for y in yrs %}<td>{{ cr(y.other_income) }}</td>{% endfor %}</tr>
+    <tr><td>Profit before exceptional items and tax</td>{% for y in yrs %}<td>{{ cr(y.pbt_before_exceptional) }}</td>{% endfor %}</tr>
+    <tr><td>Exceptional items</td>{% for y in yrs %}<td>{{ cr(y.exceptional) }}</td>{% endfor %}</tr>
+    <tr><td>Profit before tax</td>{% for y in yrs %}<td>{{ cr(y.pbt) }}</td>{% endfor %}</tr>
+    <tr><td>Profit from continuing operations</td>{% for y in yrs %}<td>{{ cr(y.profit_continuing) }}</td>{% endfor %}</tr>
+    <tr><td>Profit from discontinued operations</td>{% for y in yrs %}<td>{{ cr(y.profit_discontinued) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Profit after tax</td>{% for y in yrs %}<td>{{ cr(y.profit) }}</td>{% endfor %}</tr>
+    <tr><td>Earnings per share, basic (₹)</td>{% for y in yrs %}<td>{{ cr(y.eps, 2) }}</td>{% endfor %}</tr>
+    <tr><td>Revenue growth</td>{% for y in yrs %}<td>{{ chg(y.revenue_growth) }}</td>{% endfor %}</tr>
+    <tr><td class="l">Source</td>{% for y in yrs %}<td>{{ src(y.cites) }}</td>{% endfor %}</tr>
+  </table>
+  {% if has_excise %}<div class="callout">Reported revenue includes excise duty the company collects and passes on. Net of it, {{ yrs[-1].label }} revenue was ₹{{ cr(yrs[-1].net_revenue) }} crore against ₹{{ cr(yrs[-1].revenue) }} crore reported.</div>{% endif %}
+  {% endif %}
+  {% if r.quarters %}
+  {% set qs = r.quarters|reverse|list %}
+  <h3>Latest quarters</h3>
+  <table>
+    <tr><th>₹ crore, quarter ended</th>{% for q in qs %}<th>{{ q.label }}</th>{% endfor %}</tr>
+    <tr><td>Revenue</td>{% for q in qs %}<td>{{ cr(q.revenue) }}</td>{% endfor %}</tr>
+    {% if qs|map(attribute="excise")|select("number")|list %}<tr><td>Revenue net of excise</td>{% for q in qs %}<td>{{ cr(q.net_revenue) }}</td>{% endfor %}</tr>{% endif %}
+    <tr><td>Profit before tax</td>{% for q in qs %}<td>{{ cr(q.pbt) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Profit after tax</td>{% for q in qs %}<td>{{ cr(q.profit) }}</td>{% endfor %}</tr>
+    <tr><td>Revenue, change on the year-ago quarter</td>{% for q in qs %}<td>{{ chg(q.revenue_growth) }}</td>{% endfor %}</tr>
+    <tr><td>Audit status</td>{% for q in qs %}<td>{{ q.audited or "–" }}</td>{% endfor %}</tr>
+    <tr><td class="l">Source</td>{% for q in qs %}<td>{{ src(q.cites) }}</td>{% endfor %}</tr>
+  </table>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Cash, capital and where it went</h2>
+  <div class="q">What the business turned into cash, what it reinvested, and what it paid out</div>
+  {% if r.cash.rows %}
+  {% set cs = r.cash.rows %}
+  <table>
+    <tr><th>₹ crore ({{ r.basis }})</th>{% for c in cs %}<th>{{ c.label }}</th>{% endfor %}</tr>
+    <tr><td>Operating cash flow</td>{% for c in cs %}<td>{{ cr(c.cfo) }}</td>{% endfor %}</tr>
+    <tr><td>Capital expenditure</td>{% for c in cs %}<td>{{ cr(c.capex) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Free cash flow</td>{% for c in cs %}<td class="{{ 'neg' if c.fcf is not none and c.fcf < 0 }}">{{ cr(c.fcf) }}</td>{% endfor %}</tr>
+    <tr><td>Paid to acquire businesses</td>{% for c in cs %}<td>{{ cr(c.acquisitions) }}</td>{% endfor %}</tr>
+    <tr><td>Dividends paid in cash</td>{% for c in cs %}<td>{{ cr(c.dividends) }}</td>{% endfor %}</tr>
+    <tr><td>Free cash flow ÷ dividends</td>{% for c in cs %}<td>{% if c.cover is not none %}{{ "%.2f"|format(c.cover) }}×{% else %}–{% endif %}</td>{% endfor %}</tr>
+    <tr><td>Operating cash flow ÷ profit after tax</td>{% for c in cs %}<td>{% if c.conversion is not none %}{{ "%.2f"|format(c.conversion) }}×{% else %}–{% endif %}</td>{% endfor %}</tr>
+  </table>
+  {% set l = r.cash.latest %}
+  {% if l.cover is not none %}<div class="callout">In {{ l.label }}, free cash flow of ₹{{ cr(l.fcf) }} crore covered ₹{{ cr(l.dividends) }} crore of cash dividends {{ "%.2f"|format(l.cover) }} times{% if l.cover < 1 %}: the payout exceeded what the business generated after reinvestment{% endif %}.</div>{% endif %}
+  <h3>Balance sheet at year end</h3>
+  <table>
+    <tr><th>₹ crore</th>{% for c in cs %}<th>{{ c.label }}</th>{% endfor %}</tr>
+    <tr><td>Total assets</td>{% for c in cs %}<td>{{ cr(c.assets) }}</td>{% endfor %}</tr>
+    <tr><td>Total equity</td>{% for c in cs %}<td>{{ cr(c.equity) }}</td>{% endfor %}</tr>
+    <tr><td>Inventories</td>{% for c in cs %}<td>{{ cr(c.inventories) }}</td>{% endfor %}</tr>
+    <tr><td>Trade receivables</td>{% for c in cs %}<td>{{ cr(c.receivables) }}</td>{% endfor %}</tr>
+    <tr><td>Current investments</td>{% for c in cs %}<td>{{ cr(c.current_investments) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Cash and current investments less borrowings</td>{% for c in cs %}<td class="{{ 'neg' if c.net_liquid is not none and c.net_liquid < 0 }}">{{ cr(c.net_liquid) }}</td>{% endfor %}</tr>
+    <tr><td>Borrowings ÷ equity</td>{% for c in cs %}<td>{% if c.debt_to_equity is not none %}{{ "%.2f"|format(c.debt_to_equity) }}×{% else %}–{% endif %}</td>{% endfor %}</tr>
+  </table>
+  {{ srcline(r.cash.cites, "From each year's own year-end filing; a dash means that year's data file did not carry the line. Capital expenditure is cash paid for tangible and intangible assets.") }}
+  {% elif r.cash.is_lender %}
+  <div class="note">{% if r.insurers %}For an insurer, premium collected ahead of claims is held and invested for policyholders, so operating cash flow is not a measure of cash generation and free cash flow and net cash are not computed. Underwriting, persistency and solvency measures are in the sector part.{% else %}For a lender, deposits and borrowings are raw material and operating cash flow is not a measure of cash generation, so free cash flow and net cash are not computed. Capital and asset-quality measures are in the sector part.{% endif %}</div>
+  {% else %}
+  <div class="note">The data files on record carry no cash-flow statement for these years.</div>
+  {% endif %}
+</section>
+
+{% if r.sector_measures %}
+{%- macro kpi(value, unit) -%}{% if unit == "INR crore" %}₹{{ "{:,.0f}".format(value) }} crore{% elif unit == "%" %}{{ "{:.1f}".format(value) }}%{% elif unit == "INR" %}₹{{ "{:,.2f}".format(value) if value < 100 else "{:,.0f}".format(value) }}{% elif unit in ("count", "units") %}{{ "{:,.0f}".format(value) }}{% else %}{{ "{:,.2f}".format(value) if value % 1 else "{:,.0f}".format(value) }} {{ unit }}{% endif %}{%- endmacro -%}
+<section>
+  <h2>Sector measures</h2>
+  <div class="q">The operating figures this kind of business is judged on, as the company states them in its own presentations and press releases</div>
+  <table>
+    <tr><th class="l">Measure</th><th>Latest</th><th class="l">Covers</th><th class="l">As stated</th><th>Filed</th><th>Page</th><th>Same measure, earlier filing</th><th class="l">Source</th></tr>
+    {% for k in r.sector_measures %}<tr><td class="l">{{ k.label }}{% if k.by_model %}<span class="pill ai">Read by AI</span>{% endif %}</td><td class="nw">{{ kpi(k.value, k.unit) }}</td><td class="l">{{ {"level": "Level", "quarter": "Quarter", "year": "Full year", "month": "Month", "half year": "Half year", "nine months": "Nine months", "year to date": "Year to date"}.get(k.period_kind, "Not stated") }}<br><span class="muted">{{ k.period|truncate(34) }}</span></td><td class="l">“{{ k.quote|truncate(190) }}” <span class="muted">({{ k.kind }})</span>{% if k.needs_scope %}<br><span class="neg">The filing does not say, beside the figure, what this is a measure of.</span>{% endif %}</td><td class="nw">{{ k.date.strftime("%d %b %Y") }}</td><td>{{ k.page }}</td><td class="nw">{% if k.earlier is not none %}{{ kpi(k.earlier, k.unit) }}<br><span class="muted">{{ k.earlier_period|truncate(26) }}, filed {{ k.earlier_date.strftime("%b %Y") }}</span>{% else %}–{% endif %}</td><td class="l">{{ src(k.cites) }}</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">These are the company's own statements, not audited figures, each quoted from the page shown. Each is shown in the sentence it comes from, and the measure's name says what it is a measure of where the filing does. “Covers” says whether the figure is a level at a date or a flow over a quarter, a year or a month, read from the words beside it. An earlier figure is shown only when it covers the same kind of period, so a quarter is never set against a full year; where no comparable earlier figure is on file the column is blank. {% if r.sector_measures|selectattr("by_model")|list %}Measures marked “Read by AI” were picked out by the language model where no fixed pattern exists for this sector; each was kept only because its quoted words are on the page and contain the figure. {% endif %}A measure the company did not state in a recognisable form is absent.</p>
+</section>
+{% endif %}
+
+<section>
+  <h2>What management has said</h2>
+  <div class="q">Forward-looking statements from earnings calls. These are statements made on the call, not facts and not this report's view.</div>
+  {% if r.guidance %}
+  {% for g in r.guidance[:8] %}<div class="claim"><span class="tag">{{ "Earnings call" if g.speaker == "on the call" else "Management" }}, {{ g.quarter or "call" }}</span> {% if g.for_period %}<b>On {{ g.for_period }}:</b> {% endif %}“{{ g.text|truncate(420) }}” <span class="muted">— {{ g.speaker or "management" }}, transcript page {{ g.page }}</span>{{ src(g.cites) }}</div>{% endfor %}
+  {% else %}
+  <div class="note">No forward-looking statement with a figure was found in this company's latest earnings-call transcript, or no transcript has been filed in the last eight months.</div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Items that distort comparisons</h2>
+  <div class="q">One-offs, discontinued businesses and corporate actions to strip out before extrapolating any year</div>
+  {% if r.normalisation %}
+  <table>
+    <tr><th>Year</th><th class="l">Item</th><th>₹ crore</th><th class="l">Source</th></tr>
+    {% for n in r.normalisation %}<tr><td>{{ n.period }}</td><td class="l">{{ n.item }}</td><td class="{{ 'neg' if n.value < 0 }}">{{ cr(n.value, 2) }}</td><td class="l">{{ src(n.cites) }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p>No exceptional items or discontinued operations were reported in the years on file.</p>{% endif %}
+  {% if r.audit %}<p style="margin-top:3mm">Auditor's opinion on the latest audited results ({{ r.audit.period.strftime("%d %b %Y") }}): {{ r.audit.text }}.{{ src(r.audit.cites) }}</p>{% endif %}
+  {% if r.events %}
+  <h3>Acquisitions, restructurings and schemes filed with the exchange</h3>
+  <table>
+    <tr><th>Date</th><th class="l">Type</th><th class="l">As disclosed</th></tr>
+    {% for e in r.events %}<tr><td>{{ e.date.strftime("%d %b %Y") }}</td><td class="l"><span class="tag">{{ e.kind }}</span></td><td class="l">{{ e.text|truncate(230) }}{% if e.url %} <a class="cite" style="color:var(--accent)" href="{{ e.url }}">filing ↗</a>{% endif %}</td></tr>{% endfor %}
+  </table>
+  {{ srcline(r.event_cites, "Exchange announcement and scheme feeds; each row links to the filing itself. An announced transaction is not a completed one.") }}
+  {% endif %}
+</section>
+
+<section>
+  <h2>Market-share claims</h2>
+  <div class="q">What the company says about its own position. These are claims, not measurements.</div>
+  {% if r.claims %}
+  {% for c in r.claims %}<div class="claim"><span class="tag">Company claim</span> “{{ c.text }}” <span class="muted">— annual report, PDF page {{ c.page }}</span></div>{% endfor %}
+  {{ srcline(r.claim_cites) }}
+  {% else %}
+  <div class="note">The latest annual report states no market share with a figure. Most companies do not; where one exists it is shown here as the company's own claim with its page.</div>
+  {% endif %}
+</section>
+
+{% set v = r.valuation %}
+<div class="part">
+  <div class="eyebrow">03 · Part III<span class="pill model">Rule-based model</span></div>
+  <h1>Forecast and valuation</h1>
+  <p>A mechanical model: stated rules turn the history above into assumptions, three scenarios, and up to three ways of valuing the result. These are illustrative values, not a recommendation and not a price forecast.</p>
+</div>
+{% if v.skipped %}
+<section><div class="note">No forecast was built: {{ v.skipped }}.</div></section>
+{% else %}
+{% set base = v.scenarios["Base"] %}
+<section>
+  <h2>What the model cannot see</h2>
+  <div class="q">Read this before any number below</div>
+  <div class="note">
+    Growth and margin assumptions are extrapolated from reported history by fixed rules. The rules do not know why anything happened. They catch a tax change, a merger or a new plant only once it shows in a reported quarter, and then only by its size (see “Breaks from history” below); a lost contract or a change announced but not yet in the numbers is invisible to them, and the assumption should be overridden.
+    {% if r.normalisation %}This company's record shows such items (see “Items that distort comparisons”).{% endif %}
+    Industry multiples and betas are third-party market averages. The lenses below are expected to disagree; the size of the gap between them is a measure of how uncertain the value is.
+  </div>
+</section>
+
+{% if v.breaks is defined and (v.breaks or v.break_quarters) %}
+<section>
+  <h2>Breaks from history</h2>
+  <div class="q">Where the quarters reported since the last full year do not look like the record, and what the model did about it</div>
+  {% if v.breaks %}
+  <table>
+    <tr><th class="l">Unit</th><th>Revenue, {{ v.current_year }} so far against a year earlier</th><th>Growth the record implied</th><th>Margin a year earlier</th><th>Margin now</th><th>Margin the record implied</th><th>Margin used</th></tr>
+    {% for b in v.breaks %}<tr><td class="l">{{ b.name }}</td><td>{{ chg(b.growth) }}</td><td>{{ chg(b.history_growth) }}</td><td>{{ pct(b.margin_then) }}</td><td>{{ pct(b.margin_now) }}</td><td>{{ pct(b.history_margin) }}</td><td>{{ pct(b.margin) }}</td></tr>{% endfor %}
+  </table>
+  <div class="callout">{{ v.breaks|map(attribute="name")|join(", ") }}: the forecast is rebased on the {{ v.breaks[0].quarters }} quarter{{ "s" if v.breaks[0].quarters > 1 }} of {{ v.current_year }} reported so far, not on the earlier record.</div>
+  <p class="srcline">A unit is rebased when its revenue growth in the new year's quarters is more than 15 points away from what the record implies and the margin on that revenue has moved by more than 20% against the same quarters a year earlier. Year-1 revenue takes the growth seen so far; the margin is last year's, moved by the same proportion; later years grow at the pre-break rate. This assumes the remaining quarters look like those reported, which is the weakest link: {{ v.breaks[0].quarters }} quarter{{ "s" if v.breaks[0].quarters > 1 }} of evidence.{% if v.has_excise %} Segment revenue includes the excise duty collected, so a tax rise lifts revenue and cuts the margin at once; profit is the product of the two.{% endif %}</p>
+  {% else %}
+  <div class="note">None. The {{ v.break_quarters }} quarter{{ "s" if v.break_quarters > 1 }} of {{ v.current_year }} reported so far {{ "are" if v.break_quarters > 1 else "is" }} within the test's limits of the record for every unit{% if v.is_lender %} (lenders and insurers are not tested: a single quarter's provisions or claims are too noisy){% endif %}.</div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h2>Analyst overrides</h2>
+  <div class="q">Where a person has replaced the model's estimate, what it was, and why</div>
+  {% if v.overrides %}
+  <div class="callout">This report contains {{ v.overrides|length }} analyst override{{ "s" if v.overrides|length != 1 }}. Every figure in this part reflects {{ "them" if v.overrides|length != 1 else "it" }}.</div>
+  <table>
+    <tr><th>Assumption</th><th class="l">Applies to</th><th>Model</th><th>Analyst</th><th class="l">Reason</th></tr>
+    {% for o in v.overrides %}{% set isx = o.metric in ("beta", "peer_price_to_earnings", "ev_ebit_multiple") %}<tr><td>{{ o.metric.replace("_", " ")|capitalize }}</td><td class="l">{{ o.unit }}{% if o.year %}, FY{{ (o.year|string)[2:] }}{% endif %}{% if o.scenario != "All" %}, {{ o.scenario }}{% endif %}</td><td>{% if isx %}{{ "%.2f"|format(o.system) }}×{% else %}{{ pct(o.system) }}{% endif %}</td><td><b>{% if isx %}{{ "%.2f"|format(o.value) }}×{% else %}{{ pct(o.value) }}{% endif %}</b></td><td class="l" style="font-size:0.8rem;color:var(--ink-2)">{{ o.reason }}</td></tr>{% endfor %}
+  </table>
+  {% if v.system_only %}
+  <h3>What the overrides change (Base case)</h3>
+  <table>
+    <tr><th></th><th>{{ base.rows[0].label }} revenue</th><th>Profit after tax</th><th>Free cash flow</th><th>Discounted cash flow</th><th>Sum of the parts</th><th>Peer multiple</th><th>Average</th></tr>
+    {% for label, h in (("Model alone", v.system_only), ("With overrides", v.with_overrides)) %}<tr class="{{ 'subject' if loop.last }}"><td>{{ label }}</td><td>{{ cr(h.revenue / 1e7) }}</td><td>{{ cr(h.profit_after_tax / 1e7) }}</td><td>{{ cr(h.free_cash_flow / 1e7) if h.free_cash_flow is not none else "–" }}</td><td>{{ cr(h.dcf, 0) if h.dcf is not none else "–" }}</td><td>{{ cr(h.sotp, 0) if h.sotp is not none else "–" }}</td><td>{{ cr(h.peer_multiple, 0) if h.peer_multiple is not none else "–" }}</td><td>{{ cr(h.average, 0) if h.average is not none else "–" }}</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">₹ crore for the first three columns, ₹ per share for the rest.</p>
+  {% endif %}
+  {% else %}
+  <div class="note">None. Every assumption below is the model's own estimate.</div>
+  {% endif %}
+  {% if v.ranking %}
+  <h3>Which assumptions matter most</h3>
+  {% set smax = v.ranking|map(attribute="swing_pct")|max %}
+  <div class="chart">
+    <div class="title">Swing in the Base-case average value per share when one assumption is moved</div>
+    {% for k in v.ranking %}<div class="row" style="grid-template-columns: 78mm 1fr"><div class="name">{{ k.unit }}: {{ k.test }}</div><div class="track"><div class="line">{{ bar(k.swing_pct, smax) }}<span class="val">{{ pct(k.swing_pct) }} (₹{{ cr(k.low, 0) }}–{{ cr(k.high, 0) }})</span></div></div></div>{% endfor %}
+  </div>
+  <p class="srcline">Research effort belongs at the top of this list: those are the assumptions the value leans on.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Assumptions</h2>
+  <div class="q">The model's own estimate for every input that is a choice rather than a reported fact, with the rule that produced it. Overrides, where present, are listed above and take precedence.</div>
+  <table>
+    <tr><th>Assumption</th><th class="l">Applies to</th><th>Value</th><th class="l">Rule</th></tr>
+    {% for a in v.assumptions %}<tr><td>{{ a.key|capitalize }}</td><td class="l">{{ a.for or "Company" }}</td><td>{% if a.unit == "ratio" %}{{ pct(a.value) }}{% else %}{{ "%.2f"|format(a.value) }}×{% endif %}</td><td class="l" style="font-size:0.8rem;color:var(--ink-2)">{{ a.why }}</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Forecast</h2>
+  <div class="q">{{ "Built segment by segment, then bridged to company profit" if v.by_segment else "Built at company level: the company reports one segment" }} ({{ v.basis|title }})</div>
+  <table>
+    <tr><th>Base case, ₹ crore</th>{% for y in base.rows %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    {% if v.by_segment %}{% for u in base.rows[0].units %}<tr><td>{{ u.name }}: revenue</td>{% for y in base.rows %}<td>{{ cr(y.units[loop.index0 * 0 + loop.index0].revenue / 1e7) if false else cr((y.units|selectattr("name", "equalto", u.name)|first).revenue / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td style="padding-left:4mm;color:var(--ink-3)">result</td>{% for y in base.rows %}<td>{{ cr((y.units|selectattr("name", "equalto", u.name)|first).result / 1e7) }}</td>{% endfor %}</tr>{% endfor %}{% endif %}
+    <tr class="total"><td>Revenue</td>{% for y in base.rows %}<td>{{ cr(y.revenue / 1e7) }}</td>{% endfor %}</tr>
+    {% if v.has_excise %}<tr><td>Excise duty</td>{% for y in base.rows %}<td>{{ cr(y.excise / 1e7) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Revenue net of excise</td>{% for y in base.rows %}<td>{{ cr(y.net_revenue / 1e7) }}</td>{% endfor %}</tr>{% endif %}
+    <tr><td>Profit before tax</td>{% for y in base.rows %}<td>{{ cr(y.pbt / 1e7) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Profit after tax</td>{% for y in base.rows %}<td>{{ cr(y.pat / 1e7) }}</td>{% endfor %}</tr>
+    {% if v.associates or v.equity_bridge.minority %}
+    {% if v.associates %}<tr><td>Add share of associates' and joint ventures' profit</td>{% for y in base.rows %}<td>{{ cr(y.associates / 1e7) }}</td>{% endfor %}</tr>{% endif %}
+    {% if v.equity_bridge.minority %}<tr><td>Less minority shareholders' share</td>{% for y in base.rows %}<td>{{ cr(-y.minority_profit / 1e7) }}</td>{% endfor %}</tr>{% endif %}
+    <tr class="total"><td>Profit belonging to the company's shareholders</td>{% for y in base.rows %}<td>{{ cr(y.owners / 1e7) }}</td>{% endfor %}</tr>
+    {% endif %}
+    <tr><td>Earnings per share{{ ", owners (₹)" if v.equity_bridge.minority else " (₹)" }}</td>{% for y in base.rows %}<td>{{ cr(y.eps, 2) }}</td>{% endfor %}</tr>
+    {% if not v.is_lender %}<tr><td>Free cash flow to the firm</td>{% for y in base.rows %}<td>{{ cr(y.fcff / 1e7) }}</td>{% endfor %}</tr>{% endif %}
+  </table>
+  <h3>The three scenarios</h3>
+  <table>
+    <tr><th>Profit after tax, ₹ crore</th>{% for y in base.rows %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    {% for name in ("Bear", "Base", "Bull") %}<tr class="{{ 'subject' if name == 'Base' }}"><td>{{ name }}</td>{% for y in v.scenarios[name].rows %}<td>{{ cr(y.pat / 1e7) }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  <table>
+    <tr><th class="l">What Bear and Bull change</th><th>Growth, points a year</th><th>Margin, proportion</th></tr>
+    {% for u in v.units %}<tr><td class="l">{{ u.name }}</td><td>± {{ "%.1f"|format(u.g_shift * 100) }}</td><td>± {{ pct(u.m_shift, 0) }}</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">Each unit is moved by how much its own record has varied: the standard deviation of its annual growth and of its margin over the years on file, within fixed limits. Bull adds, Bear subtracts. The scenarios are internally consistent sets of assumptions, not probabilities. Profit is before minority interests and exceptional items.</p>
+  {% if base.rows[0].cfo is defined %}
+  <h3>From profit to cash, and where the cash goes</h3>
+  <table>
+    <tr><th>Base case, ₹ crore</th>{% for y in base.rows %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    <tr><td>Profit after tax</td>{% for y in base.rows %}<td>{{ cr(y.pat / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Add depreciation and amortisation</td>{% for y in base.rows %}<td>{{ cr(y.da / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Less increase in working capital</td>{% for y in base.rows %}<td>{{ cr(-y.nwc_change / 1e7) }}</td>{% endfor %}</tr>
+    <tr class="total"><td>Operating cash flow</td>{% for y in base.rows %}<td>{{ cr(y.cfo / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Less capital expenditure</td>{% for y in base.rows %}<td>{{ cr(-y.capex / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Less dividends ({{ pct(v.payout, 0) }} of profit)</td>{% for y in base.rows %}<td>{{ cr(-y.dividends / 1e7) }}</td>{% endfor %}</tr>
+    {% if base.rows[0].acquisitions %}<tr><td>Less acquisitions completed since the balance sheet</td>{% for y in base.rows %}<td>{{ cr(-y.acquisitions / 1e7) if y.acquisitions else "–" }}</td>{% endfor %}</tr>{% endif %}
+    <tr class="total"><td>Cash left after capex, dividends{{ " and acquisitions" if base.rows[0].acquisitions }}</td>{% for y in base.rows %}<td class="{{ 'neg' if y.cash_after < 0 }}">{{ cr(y.cash_after / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Cash and current investments at year end</td>{% for y in base.rows %}<td class="{{ 'neg' if y.liquid_close < 0 }}">{{ cr(y.liquid_close / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Dividend per share (₹)</td>{% for y in base.rows %}<td>{{ cr(y.dps, 2) }}</td>{% endfor %}</tr>
+  </table>
+  <h3>Working capital behind the forecast</h3>
+  <table>
+    <tr><th>₹ crore</th>{% for y in base.rows %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    {% for line in base.rows[0].working_capital %}<tr><td>{{ "Less " ~ line.label|lower if line.sign < 0 else line.label }}</td>{% for y in base.rows %}<td>{{ cr((y.working_capital|selectattr("label", "equalto", line.label)|first).value * line.sign / 1e7) }}</td>{% endfor %}</tr>{% endfor %}
+    <tr class="total"><td>Operating working capital</td>{% for y in base.rows %}<td>{{ cr(y.nwc / 1e7) }}</td>{% endfor %}</tr>
+  </table>
+  {% set uncovered = base.rows|selectattr("dividend_uncovered")|list %}
+  <p class="srcline">Operating cash flow is profit plus depreciation less the working capital that growth ties up; each working-capital line is held at its share of {{ "revenue net of excise" if v.has_excise else "revenue" }} in the last full year. Year-end cash starts from ₹{{ cr(v.liquid0 / 1e7) }} crore on the last balance sheet; borrowings are held flat and no buy-back is assumed.{% if uncovered %} <b>Warning:</b> in {{ uncovered|map(attribute="label")|join(", ") }} the dividend exceeds operating cash flow less capex, so it would be paid from the balance sheet.{% endif %}{% if base.rows|selectattr("liquid_close", "lt", 0)|list %} <b>Warning:</b> cash turns negative on these assumptions: the plan needs borrowing or a lower payout.{% endif %}</p>
+  {% if v.sheet0 %}
+  {% set s0 = v.sheet0 %}
+  <h3>Forecast balance sheet</h3>
+  <table>
+    <tr><th>₹ crore, year end</th><th>FY{{ "%02d"|format(v.fy.year % 100) }}</th>{% for y in base.rows %}<th>{{ y.label }}</th>{% endfor %}</tr>
+    {% for key, label in (("liquid", "Cash and current investments"), ("wc_assets", "Receivables, inventories, other current assets"), ("fixed", "Fixed and other long-term assets"), ("investments", "Long-term investments and associates")) %}
+    <tr><td>{{ label }}</td><td>{{ cr(s0[key] / 1e7) }}</td>{% for y in base.rows %}<td class="{{ 'neg' if y.sheet[key] < 0 }}">{{ cr(y.sheet[key] / 1e7) }}</td>{% endfor %}</tr>{% endfor %}
+    <tr class="total"><td>Total assets</td><td>{{ cr(s0.assets / 1e7) }}</td>{% for y in base.rows %}<td>{{ cr(y.sheet.assets / 1e7) }}</td>{% endfor %}</tr>
+    {% for key, label in (("wc_liabilities", "Payables and other current liabilities"), ("borrowings", "Borrowings"), ("other_liabilities", "Other liabilities"), ("equity", "Equity")) %}
+    <tr><td>{{ label }}</td><td>{{ cr(s0[key] / 1e7) }}</td>{% for y in base.rows %}<td>{{ cr(y.sheet[key] / 1e7) }}</td>{% endfor %}</tr>{% endfor %}
+    <tr class="total"><td>Total liabilities and equity</td><td>{{ cr((s0.wc_liabilities + s0.borrowings + s0.other_liabilities + s0.equity) / 1e7) }}</td>{% for y in base.rows %}<td>{{ cr((y.sheet.assets - y.sheet.residual) / 1e7) }}</td>{% endfor %}</tr>
+    <tr><td>Difference (must be zero)</td><td>0</td>{% for y in base.rows %}<td>{{ cr(y.sheet.residual / 1e7) }}</td>{% endfor %}</tr>
+  </table>
+  <h3>Model checks</h3>
+  <table>
+    <tr><th class="l">Check</th><th>Largest difference over the forecast, ₹ crore</th><th class="l">Result</th></tr>
+    {% set bsw = namespace(worst=0) %}{% for y in base.rows %}{% if y.sheet.residual|abs > bsw.worst %}{% set bsw.worst = y.sheet.residual|abs %}{% endif %}{% endfor %}
+    {% set cash = namespace(worst=0) %}{% for y in base.rows %}{% set d = (y.cfo - (y.pat + y.da - y.nwc_change))|abs %}{% if d > cash.worst %}{% set cash.worst = d %}{% endif %}{% endfor %}
+    {% set wcw = namespace(worst=0) %}{% for y in base.rows %}{% set t = namespace(sum=0) %}{% for l in y.working_capital %}{% set t.sum = t.sum + l.value * l.sign %}{% endfor %}{% set d = (t.sum - y.nwc)|abs %}{% if d > wcw.worst %}{% set wcw.worst = d %}{% endif %}{% endfor %}
+    {% for label, worst in (("Balance sheet: assets equal liabilities plus equity", bsw.worst), ("Operating cash flow equals profit plus depreciation less working-capital change", cash.worst), ("Working-capital lines add up to the total", wcw.worst)) %}
+    <tr><td class="l">{{ label }}</td><td>{{ "%.2f"|format(worst / 1e7) }}</td><td class="l">{{ "Pass" if worst / 1e7 < 0.5 else "FAIL" }}</td></tr>{% endfor %}
+    <tr><td class="l">Cash stays positive</td><td></td><td class="l">{{ "Pass" if not base.rows|selectattr("liquid_close", "lt", 0)|list else "Warning: negative in " ~ base.rows|selectattr("liquid_close", "lt", 0)|map(attribute="label")|join(", ") }}</td></tr>
+    <tr><td class="l">Dividend covered by cash after capex</td><td></td><td class="l">{{ "Pass" if not uncovered else "Warning: not covered in " ~ uncovered|map(attribute="label")|join(", ") }}</td></tr>
+  </table>
+  <p class="srcline">The balance sheet is grouped the way the forecast moves it. “Fixed and other long-term assets” and “Other liabilities” include everything the named lines do not, held flat apart from capex, depreciation and acquisitions; borrowings and long-term investments are held at the last balance sheet.</p>
+  {% endif %}
+  {% endif %}
+</section>
+
+{% set eb = v.equity_bridge %}
+{% if v.cost_of_capital %}
+{% if eb["items"] %}
+<section style="break-inside: avoid">
+  <h2>From the business to the shares</h2>
+  <div class="q">What is added to the value of the forecast business, and what is taken out, before dividing by the share count</div>
+  <table>
+    <tr><th class="l">Asset outside the forecast</th><th class="l">Valued at</th><th>₹ crore</th><th>₹ per share</th></tr>
+    {% for item in eb["items"] %}<tr><td class="l">{{ item.label }}</td><td class="l">{{ item.basis }}</td><td>{{ cr(item.value / 1e7) }}</td><td>{{ cr(item.value / v.shares, 2) }}</td></tr>{% endfor %}
+    <tr class="total"><td class="l">Added to each cash-flow and sum-of-the-parts value</td><td></td><td>{{ cr(eb.added / 1e7) }}</td><td>{{ cr(eb.added / v.shares, 2) }}</td></tr>
+  </table>
+  <p class="srcline">Each asset is counted once: the forecast covers what the segments earn and leaves out investment income, so these sit on top of it. Subsidiaries are not listed because their results are already inside the consolidated figures.{% if eb.minority %} Minority shareholders of subsidiaries own {{ pct(eb.minority) }} of group profit; the same share of the business value and of forecast earnings per share is treated as theirs.{% endif %}</p>
+  {{ srcline(eb.cites) }}
+  {% if v.deals.paid or v.deals.pending %}
+  <h3>Acquisitions disclosed since the balance sheet</h3>
+  <table>
+    <tr><th class="l">Disclosure</th><th>Filed</th><th class="l">Status</th><th>Stated cost, ₹ crore</th><th class="l">Treatment</th></tr>
+    {% for d in v.deals.paid %}<tr><td class="l">{{ d.what }}</td><td>{{ d.date.strftime("%d %b %Y") }}</td><td class="l">Completed</td><td>{{ cr(d.cost / 1e7) }}</td><td class="l">Deducted{% if d.priced_on %}; price from the agreement filed {{ d.priced_on.strftime("%d %b %Y") }}{% endif %}</td></tr>{% endfor %}
+    {% for d in v.deals.pending %}<tr><td class="l">{{ d.what }}</td><td>{{ d.date.strftime("%d %b %Y") }}</td><td class="l">Not yet completed</td><td>{{ cr(d.cost / 1e7) if d.cost is not none else "–" }}</td><td class="l">Left out of the forecast and the bridge until it closes</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">Read from the cost, consideration and completion rows of each disclosure. A price stated as “up to” or “about” is taken at the figure given. What a completed purchase will earn is not added to the forecast: the cash has gone but the model does not yet know the acquired business, so growth for the segment it joins should be reviewed.{{ " " }}{% if v.deals_cites %}Sources: {% for n in v.deals_cites %}<a href="#s{{ n }}">[{{ n }}]</a> {% endfor %}{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h2>Discounted cash flow</h2>
+  <div class="q">Five years of free cash flow and a terminal value, discounted to today</div>
+  {% set c = v.cost_of_capital %}
+  <div class="cols">
+    <dl class="kv" style="grid-template-columns: 52mm 1fr">
+      <dt>Ten-year government yield</dt><dd>{{ pct(c.risk_free, 2) }}</dd>
+      <dt>Equity risk premium, India</dt><dd>{{ pct(c.equity_risk_premium, 2) }}</dd>
+      <dt>Beta</dt><dd>{{ "%.2f"|format(c.beta) }}</dd>
+      <dt>Cost of equity</dt><dd>{{ pct(c.cost_of_equity, 2) }}</dd>
+      <dt>Debt share of capital</dt><dd>{{ pct(c.debt_weight) }} at {{ pct(c.cost_of_debt, 2) }} before tax</dd>
+      <dt>Cost of capital</dt><dd><b>{{ pct(c.wacc, 2) }}</b></dd>
+      <dt>Terminal growth</dt><dd>{{ pct(c.terminal_growth) }}</dd>
+    </dl>
+    <dl class="kv" style="grid-template-columns: 52mm 1fr">
+      <dt>Enterprise value, Base</dt><dd>₹{{ cr(base.dcf_ev / 1e7) }} crore</dd>
+      <dt>Of which terminal value</dt><dd>{{ pct(base.dcf_terminal_share, 0) }}</dd>
+{% if eb.minority %}      <dt>Less minority shareholders' share</dt><dd>{{ pct(eb.minority) }}</dd>{% endif %}
+      <dt>Assets outside the forecast, added</dt><dd>₹{{ cr(eb.added / 1e7) }} crore</dd>
+      <dt>Shares outstanding</dt><dd>{{ cr(v.shares / 1e7, 2) }} crore</dd>
+      <dt>Value per share, Base</dt><dd><b>₹{{ cr(base.dcf, 2) }}</b></dd>
+    </dl>
+  </div>
+  {% if v.sensitivity %}
+  <h3>Sensitivity of the Base value per share (₹)</h3>
+  <table>
+    <tr><th>Terminal growth ↓ / cost of capital →</th>{% for w in v.sensitivity.waccs %}<th>{{ pct(w, 2) }}</th>{% endfor %}</tr>
+    {% for row in v.sensitivity.rows %}<tr class="{{ 'subject' if loop.index == 3 }}"><td>{{ pct(row.g) }}</td>{% for x in row["values"] %}<td>{{ cr(x) }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  {% endif %}
+  <p class="srcline">{{ pct(base.dcf_terminal_share, 0) }} of the value sits in the terminal year: small changes in the two rates above move the answer a long way. In that year the business is assumed to reinvest only what long-run growth requires (growth ÷ a {{ pct(v.roc, 0) }} return on capital), not the capex of the forecast years; the five forecast years are too short to capture a long growth runway, so for a fast-growing company this lens will sit well below the market price.</p>
+</section>
+{% elif v.is_lender %}
+<section>
+  <h2>Discounted cash flow</h2>
+  <div class="note">{% if r.insurers %}Not computed. An insurer's cash flow is dominated by policyholders' money, so free cash flow to the firm has no meaning here; embedded value (the worth of policies already written plus net worth) is the right tool for a life insurer and a book-value model for a general insurer, and neither is built yet.{% if not r.insurers|selectattr('combined_ratio', 'number')|list %} The peer earnings multiple is a weak guide for a life insurer: reported profit is held down by the cost of writing new policies, so the market prices these companies well above what their earnings alone support, and peers trading above 60 times earnings are left out of the median.{% endif %}{% else %}Not computed. A lender's borrowings fund its lending, so free cash flow to the firm has no meaning here; a dividend or excess-return model on book value is the right tool and is not built yet.{% endif %}</div>
+</section>
+{% endif %}
+
+{% if base.sotp_parts %}
+<section>
+  <h2>Sum of the parts</h2>
+  <div class="q">Each segment's next-year result valued at what the market pays for operating profit in that line of business</div>
+  <table>
+    <tr><th>Segment</th><th>{{ base.rows[0].label }} result</th><th>EV ÷ EBIT used</th><th class="l">Where the multiple comes from</th><th>Industry average</th><th>Value, ₹ crore</th></tr>
+    {% for p in base.sotp_parts %}<tr><td>{{ p.name }}</td><td>{{ cr(p.result / 1e7) }}</td><td>{{ "%.1f"|format(p.multiple) }}×</td><td class="l">{{ p.basis }}</td><td>{{ "%.1f×"|format(p.industry) if p.industry is not none else "–" }}</td><td>{{ cr(p.value / 1e7) }}</td></tr>{% endfor %}
+    {% if base.sotp_unallocated %}<tr><td>Less unallocated costs ({{ pct(1 - v.sotp_unallocated) }} of segment profit)</td><td></td><td></td><td></td><td></td><td>−{{ cr(base.sotp_unallocated / 1e7) }}</td></tr>{% endif %}
+{% if eb.minority %}    <tr><td>Less minority shareholders' share ({{ pct(eb.minority) }})</td><td></td><td></td><td></td><td></td><td>−{{ cr(eb.minority * ((base.sotp_parts|sum(attribute="value")) - base.sotp_unallocated) / 1e7) }}</td></tr>{% endif %}
+    <tr><td>Assets outside the forecast, net</td><td></td><td></td><td></td><td></td><td>{{ cr(eb.added / 1e7) }}</td></tr>
+    <tr class="total"><td>Per share (₹)</td><td></td><td></td><td></td><td></td><td>{{ cr(base.sotp, 2) }}</td></tr>
+  </table>
+  <p class="srcline">EV ÷ EBIT is a company's market value plus borrowings less cash, divided by its operating profit. Where at least two listed peers for a segment have a usable figure, their median is used, each computed from the peer's own latest full-year filing and its market value; otherwise the industry-wide average (Damodaran, India), shown alongside for comparison. Peers above 60× are left out. Two peers is thin evidence, and a peer's multiple reflects its whole company, not only the matching business. These are market prices, not judgments about this company's segments: when markets are richly valued this lens runs high.</p>
+</section>
+{% endif %}
+
+<section>
+  <h2>The lenses side by side</h2>
+  <div class="q">Value per share under each method and scenario, against ₹{{ cr(v.price, 2) }} on {{ v.price_date.strftime("%d %b %Y") }}</div>
+  <table>
+    <tr><th>₹ per share</th><th>Discounted cash flow</th><th>Sum of the parts</th><th>Peer earnings multiple</th><th>Blended reference</th><th>Blend against price</th></tr>
+    {% for name in ("Bear", "Base", "Bull") %}{% set s = v.scenarios[name] %}<tr class="{{ 'subject' if name == 'Base' }}"><td>{{ name }}</td><td>{{ cr(s.dcf, 0) if s.dcf is defined else "–" }}</td><td>{{ cr(s.sotp, 0) if s.sotp is defined else "–" }}</td><td>{{ cr(s.relative, 0) if s.relative is defined else "–" }}</td><td>{{ cr(s.average, 0) if s.average is defined else "–" }}</td><td>{{ chg(s.gap) if s.gap is defined else "–" }}</td></tr>{% endfor %}
+  </table>
+  {% set vals = [base.dcf, base.sotp, base.relative]|select("defined")|list %}
+  {% if vals|length > 1 %}<div class="callout">In the Base case the methods span ₹{{ cr(vals|min, 0) }} to ₹{{ cr(vals|max, 0) }} a share. That spread, not any single figure, is the honest summary of what this model knows.</div>{% endif %}
+  {% if base.weights %}<p class="srcline">Blended reference: {% for k, label in (("dcf", "discounted cash flow"), ("sotp", "sum of the parts"), ("relative", "peer multiple")) %}{% if base.weights[k] is defined %}{{ pct(base.weights[k], 0) }} {{ label }}{{ ", " if not loop.last }}{% endif %}{% endfor %}. The weights (40 / 45 / 15, rescaled to the lenses available) are a fixed convention with no statistical meaning.</p>{% endif %}
+  {% if v.pe_parts %}
+  <h3>Peer earnings multiple, weighted by where the profit comes from</h3>
+  <table>
+    <tr><th class="l">Segment</th><th>Share of profit</th><th>Price ÷ earnings of its peers</th><th class="l">Basis</th><th>Contribution</th></tr>
+    {% for part in v.pe_parts %}<tr><td class="l">{{ part.name }}</td><td>{{ pct(part.weight) }}</td><td>{{ "%.1f"|format(part.multiple) }}×</td><td class="l">{{ part.basis }}</td><td>{{ "%.1f"|format(part.weight * part.multiple) }}×</td></tr>{% endfor %}
+    <tr class="total"><td class="l">Weighted multiple</td><td></td><td></td><td></td><td>{{ "%.1f"|format(v.peer_pe) }}×</td></tr>
+  </table>
+  {% endif %}
+  {% if v.sotp_sensitivity %}
+  {% set ss = v.sotp_sensitivity %}
+  <h3>Sum of the parts when the two largest multiples move</h3>
+  <table>
+    <tr><th>{{ ss.down }} ↓ / {{ ss.across }} →</th>{% for m in ss.across_multiples %}<th>{{ "%.1f"|format(m) }}×</th>{% endfor %}</tr>
+    {% for row in ss.rows %}<tr class="{{ 'subject' if loop.index == 3 }}"><td>{{ "%.1f"|format(row.multiple) }}×</td>{% for x in row["values"] %}<td>{{ cr(x) }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  <p class="srcline">₹ per share, Base case, with each multiple moved 10% and 20% either way.</p>
+  {% endif %}
+  {{ srcline(v.cites, ("Peer multiple: " ~ ("profit-weighted" if v.pe_parts else "median") ~ " price-to-earnings of " ~ v.peer_count ~ " peers (" ~ "%.1f"|format(v.peer_pe) ~ "×, trailing) applied to next year's forecast earnings; peers above 60× are left out. ") if v.peer_pe else "No peer multiple: fewer than two peers with usable earnings. ") }}
+</section>
+{% endif %}
+
+{% set a = r.assessment %}
+{% if r.exhibits %}
+<section>
+  <h2>Exhibits</h2>
+  <div class="q">The figures above as charts: reported history and the Base-case forecast on one axis, forecast years shaded</div>
+  <div class="exhibits">
+    {% for e in r.exhibits %}<figure><div class="t">Exhibit {{ e.n }}. {{ e.title }}</div><div class="u">{{ e.unit }}</div>{{ e.svg|safe }}<figcaption>{{ e.note }}</figcaption></figure>{% endfor %}
+  </div>
+  <p class="srcline">Every exhibit is drawn from figures already in this report: history from the filings cited in Parts I and II, forecasts from the Base case above. The same data and native charts are in the Excel model that accompanies this report.</p>
+</section>
+{% endif %}
+
+<div class="part">
+  <div class="eyebrow">04 · Part IV<span class="pill ai">Platform AI</span><span class="pill model">Rules</span></div>
+  <h1>The assessment</h1>
+  <p>What the evidence adds up to, what could break it, and what to watch. Nothing here is a recommendation.</p>
+</div>
+
+<section>
+  <h2>Five questions</h2>
+  <div class="q">{% if a.narrative.author == "llm" %}Written by a language model from the figures in this report only; every number in it was checked against them.{% else %}Written by fixed rules from the figures in this report.{% endif %}</div>
+  {% for item in a.questions %}<h3>{{ item.q }}</h3><p>{{ item.a }}</p>{% endfor %}
+</section>
+
+<section>
+  <h2>Risk register</h2>
+  <div class="q">Each risk is a threshold crossed by a figure in this report, not an opinion</div>
+  {% if a.risks %}
+  <table>
+    <tr><th>Risk</th><th class="l">Severity</th><th class="l">Evidence</th><th class="l">Source</th></tr>
+    {% for k in a.risks %}<tr><td>{{ k.kind }}</td><td class="l"><span class="tag" style="{{ 'border-color:#9b2c2c;color:#9b2c2c' if k.severity == 'High' }}">{{ k.severity }}</span></td><td class="l">{{ k.text }}</td><td class="l">{{ src(k.cites) }}</td></tr>{% endfor %}
+  </table>
+  <p class="srcline">The register covers what the filings and the model can show. It does not cover risks that leave no trace in them: competition, technology, management quality, regulation not yet announced.</p>
+  {% else %}<div class="note">None of the register's thresholds is crossed by the figures on file. That is not the same as no risk.</div>{% endif %}
+</section>
+
+<section>
+  <h2>What would change the view</h2>
+  <div class="q">Checks to run against each new filing. The thresholds are the model's Bull and Bear assumptions.</div>
+  <div class="cols">
+    <div><h3 style="margin-top:0">Would strengthen it</h3>{% for t in a.triggers.bullish %}<p style="margin-bottom:1.5mm">▲ {{ t }}</p>{% else %}<p class="muted">No numeric trigger available.</p>{% endfor %}</div>
+    <div><h3 style="margin-top:0">Would weaken it</h3>{% for t in a.triggers.bearish %}<p style="margin-bottom:1.5mm">▼ {{ t }}</p>{% else %}<p class="muted">No numeric trigger available.</p>{% endfor %}</div>
+  </div>
+  <h3>Monitoring checklist</h3>
+  {% for t in a.triggers.watch %}<p style="margin-bottom:1.5mm">☐ {{ t }}</p>{% endfor %}
+</section>
+
+<div class="part">
+  <div class="eyebrow">05 · Part V<span class="pill reported">Sources</span></div>
+  <h1>Evidence</h1>
+  <p>How much of the above was checked, and where each number came from.</p>
+</div>
+
+<section>
+  <h2>Verification</h2>
+  <div class="q">Each fact was re-read from the archived copy of its source after extraction</div>
+  <div class="keyfacts" style="margin:0 0 4mm">
+    <div><div class="k">Facts on file</div><div class="v">{{ "{:,}".format(r.evidence.facts) }}</div><div class="n">{{ r.evidence.documents }} archived documents</div></div>
+    <div><div class="k">Reported</div><div class="v">{{ "{:,}".format(r.evidence.reported) }}</div><div class="n">read from filings</div></div>
+    <div><div class="k">Calculated</div><div class="v">{{ "{:,}".format(r.evidence.calculated) }}</div><div class="n">each lists its inputs · {{ r.evidence.assumptions }} stated assumptions</div></div>
+    <div><div class="k">Re-checked</div><div class="v">{{ "{:,}".format(r.evidence.verified) }}</div><div class="n">{{ r.evidence.failed }} failed · {{ r.evidence.claims }} company claims</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Source register</h2>
+  <div class="q">Numbered in order of first use. Links open the document itself; the checksum identifies the archived copy the figures were read from.</div>
+  <table class="register">
+    {% for s in r.sources %}
+    <tr id="s{{ s.n }}"><td class="n">[{{ s.n }}]</td><td>
+      <b>{% if s.company %}{{ s.company }}: {% endif %}{{ s.title }}</b> — {{ s.publisher }}{% if s.date %}, {{ s.date.strftime("%d %b %Y") }}{% endif %}{% if s.pages %} · pages {{ s.pages|join(", ") }}{% endif %}<br>
+      <a class="url" href="{{ s.url }}">{{ s.url }}</a>
+      {% if s.readable_url %}<br><span class="muted">Readable version:</span> <a class="url" href="{{ s.readable_url }}">{{ s.readable_url }}</a>{% endif %}<br>
+      <span class="muted">Archived copy sha256 {{ s.sha }}… · link {% if s.link_status == 200 %}<span class="ok">resolved</span>{% else %}<span class="bad">did not resolve ({{ s.link_status or "no response" }})</span>{% endif %}{% if s.checked %} on {{ s.checked.strftime("%d %b %Y") }}{% endif %}</span>
+    </td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Definitions and limits</h2>
+  <dl class="kv" style="grid-template-columns: 40mm 1fr">
+    <dt>Fiscal year</dt><dd>FY26 is the twelve months ended 31 March 2026 unless the company's year ends otherwise.</dd>
+    <dt>Standalone, consolidated</dt><dd>Standalone is the parent entity alone; consolidated adds subsidiaries and the share of associates. The two are never mixed in one table.</dd>
+    <dt>Segment result</dt><dd>Segment profit before tax and finance costs as the company reports it. It is not EBITDA and not net profit.</dd>
+    <dt>Reported, claimed, calculated</dt><dd>Reported figures are read from filings. Claims are the company's own statements about itself. Calculated figures are arithmetic on reported ones and inherit their sources.</dd>
+    <dt>PDF page</dt><dd>The page of the file, not the printed page number; some reports are laid out as two-page spreads.</dd>
+    <dt>Not in this edition</dt><dd>Unit volumes for sectors other than vehicles, telecom, aviation, mutual funds and insurance, sector measures beyond lenders, and risks that leave no trace in filings. This document is research and education, not a recommendation to buy, sell or hold.</dd>
+  </dl>
+</section>
+</body>
+</html>

@@ -160,7 +160,8 @@ def refine_profitability_score(base_score: float, pli_result: dict | None) -> di
 
 
 def apply_score_refinement(scores: dict, pli_result: dict | None = None,
-                            bsi_result: dict | None = None, cfi_result: dict | None = None) -> dict:
+                            bsi_result: dict | None = None, cfi_result: dict | None = None,
+                            governance_result: dict | None = None) -> dict:
     """Returns a NEW scores dict (never mutates `scores` in place) with
     `profitability`/`balance_sheet`/`cash_flow` replaced by their refined
     values and `overall` recomputed from the exact weight dict `scores`
@@ -168,7 +169,12 @@ def apply_score_refinement(scores: dict, pli_result: dict | None = None,
     same `UNIVERSAL_WEIGHTS`/`SECTOR_WEIGHTS` entry, untouched). Returns
     `scores` unchanged if it carries no `weights` (e.g. the "scoring"
     stage itself failed upstream this run) — recomputing `overall` without
-    the real weight dict would silently fall back to a wrong default."""
+    the real weight dict would silently fall back to a wrong default.
+
+    `governance_result` (see `governance_scoring.py::compute_governance_penalty()`)
+    is applied as a direct penalty on `overall`, after the category blends
+    below — it has no "base score" of its own to blend toward, unlike the
+    three intelligence engines."""
     weights = scores.get("weights")
     if not weights:
         return scores
@@ -181,7 +187,7 @@ def apply_score_refinement(scores: dict, pli_result: dict | None = None,
     refined_scores["profitability"] = profitability_refinement["refined_score"]
     refined_scores["balance_sheet"] = balance_sheet_refinement["refined_score"]
     refined_scores["cash_flow"] = cash_flow_refinement["refined_score"]
-    refined_scores["overall"] = recompute_overall(
+    overall = recompute_overall(
         {
             "growth": refined_scores.get("growth", 50.0),
             "profitability": refined_scores["profitability"],
@@ -192,11 +198,21 @@ def apply_score_refinement(scores: dict, pli_result: dict | None = None,
         },
         weights,
     )
-    refined_scores["overall_rating"] = classify_overall_rating(refined_scores["overall"])
+    governance_penalty = (governance_result or {}).get("penalty") or 0.0
+    if governance_penalty:
+        overall = _clamp(overall - governance_penalty)
+    refined_scores["overall"] = overall
+    refined_scores["overall_rating"] = classify_overall_rating(overall)
     refined_scores["refinement"] = {
         "profitability": profitability_refinement,
         "balance_sheet": balance_sheet_refinement,
         "cash_flow": cash_flow_refinement,
+        "governance": governance_result,
         "pre_refinement_overall": scores.get("overall"),
     }
+    if governance_result and governance_result.get("flags"):
+        refined_scores["red_flags"] = [
+            *(scores.get("red_flags") or []),
+            *(f"{f['severity'].title()} — {f['description']}" for f in governance_result["flags"]),
+        ]
     return refined_scores

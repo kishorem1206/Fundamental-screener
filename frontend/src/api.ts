@@ -22,6 +22,26 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  bieSummary: (symbol: string) =>
+    req<import("./components/sections/DeepReportSection").DeepReportSummary>(`/bie/${encodeURIComponent(symbol)}/summary`),
+  bieStatus: (symbol: string) =>
+    req<import("./components/DeepReportButton").DeepReportStatus>(`/bie/${encodeURIComponent(symbol)}/status`),
+  bieBuild: (symbol: string) =>
+    req<{ status: string }>(`/bie/${encodeURIComponent(symbol)}/build`, { method: "POST" }),
+  bieReports: () =>
+    req<{ reports: { symbol: string; company_name: string; basic_industry: string | null; built_at: string }[]; building: string[] }>("/bie/reports"),
+  bieAssumptions: (symbol: string, scenario: string) =>
+    req<import("./components/AssumptionCenter").ControlCentre>(`/bie/${encodeURIComponent(symbol)}/assumptions?scenario=${scenario}`),
+  bieSetOverride: (symbol: string, body: Record<string, unknown>) =>
+    req<{ id: string }>(`/bie/${encodeURIComponent(symbol)}/overrides`, { method: "POST", body: JSON.stringify(body) }),
+  bieResetOverride: (symbol: string, id: string) =>
+    req<{ reset: string }>(`/bie/${encodeURIComponent(symbol)}/overrides/${id}`, { method: "DELETE" }),
+  bieOverrideHistory: (symbol: string) =>
+    req<{ history: import("./components/AssumptionCenter").HistoryRow[] }>(`/bie/${encodeURIComponent(symbol)}/overrides/history`),
+  bieRanking: (symbol: string) =>
+    req<{ ranking: import("./components/AssumptionCenter").RankRow[] }>(`/bie/${encodeURIComponent(symbol)}/assumption-ranking`),
+  bieWhatIf: (symbol: string, params: Record<string, string>) =>
+    req<{ results: (import("./components/AssumptionCenter").Lenses & { value: number })[] }>(`/bie/${encodeURIComponent(symbol)}/what-if?${new URLSearchParams(params).toString()}`),
   getSectors: () => req<{ sectors: string[] }>("/stocks/sectors"),
   getSectorCounts: () =>
     req<import("./types").SectorCountsResponse>("/stocks/sector-counts"),
@@ -104,6 +124,10 @@ export const api = {
     req<import("./types").BankRoeAnalysis>(`/bank-roe/${companyId}`),
   getCompanyScores: (params: Record<string, string>) =>
     req<import("./types").CompanyScoresResponse>(`/company-scores?${new URLSearchParams(params).toString()}`),
+  getFrameworkStock: (symbol: string) =>
+    req<import("./components/CombinedScore").FrameworkStockDetail>(`/framework/${encodeURIComponent(symbol)}`),
+  getFrameworkScores: (params: Record<string, string>) =>
+    req<import("./components/CombinedScore").FrameworkScoresResponse>(`/framework/scores?${new URLSearchParams(params).toString()}`),
   getQuickScores: (params: Record<string, string>) =>
     req<import("./types").CompanyScoresResponse>(`/quick-scores?${new URLSearchParams(params).toString()}`),
 };

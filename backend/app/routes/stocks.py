@@ -87,10 +87,14 @@ def list_stocks(
     # `stocks` grown to 1610 companies (alphabetical order), the old le=1000
     # cap silently truncated the list before "P" (1074 companies sort
     # before "Pine Labs Ltd."), making every company from roughly the back
-    # third of the alphabet unsearchable regardless of query. Raised well
-    # past today's 1610 so the same class of bug doesn't recur as the
-    # universe grows further.
-    limit: int = Query(default=200, ge=1, le=2000),
+    # third of the alphabet unsearchable regardless of query. Raised to
+    # 2000 to fix it — insufficient headroom, it turned out: by 2026-09-28
+    # the IPO-promotion work that same session grew the universe to 2624
+    # active stocks, silently recreating the identical bug (both here and
+    # in the QuickScreener coverage counter, which used this same capped
+    # list's length as its denominator). Raised to 5000 this time, with
+    # real headroom rather than "just past today's count" again.
+    limit: int = Query(default=200, ge=1, le=5000),
 ):
     """Return stocks, optionally filtered by sector."""
     db = get_db()

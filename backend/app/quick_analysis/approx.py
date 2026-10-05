@@ -15,13 +15,29 @@ only substituting Yahoo-derived INPUTS:
   cash flow      conversion band (CFO / EBITDA), CFO volatility, and archetype
                  from Yahoo CFO/FCF/financing series (4-5 fiscal years vs the
                  ledger's ~12).
-  profitability  NOT derivable — the P&L master score needs sector-peer margin
-                 percentiles and Screener segment/structure data. Left
-                 unrefined here; `universe.py` is where a peer-percentile
-                 substitute would come from once the whole universe is scored.
+  profitability  the P&L master score itself (sector-peer margin percentiles,
+                 doubling velocity, cost-structure resilience) needs Screener
+                 segment/structure data this module still can't derive from
+                 Yahoo alone. But ONE of its five inputs — earnings quality
+                 (EQI, "how much of profit is genuinely core") — is
+                 derivable whenever the Screener ledger has other_income/PBT
+                 on record (see other_income_flag.py), often already true as
+                 a side effect of the quarterly-growth Screener fallback
+                 (screener_quarterly_fallback.py) this package also calls.
+                 2026-09-28, explicit user request, surfaced by I S T
+                 Limited: Other Income was 78-88% of PBT across its last 3
+                 quarters, something pat_margin/ROE/ROCE never flagged.
+  governance     promoter pledge / promoter-holding-decline penalty applied
+                 directly to `overall` (see governance_scoring.py) — reads
+                 the `governance_events` the FULL pipeline's "shareholding"
+                 ingestion stage already wrote (NSE promoter/pledge data);
+                 this module never scrapes it itself. `None` — no penalty —
+                 for a company that hasn't been through a full analysis yet.
 
-Financial institutions get no balance-sheet refinement, mirroring the full
-engine (archetype is NOT_APPLICABLE for them).
+Financial institutions get no balance-sheet or profitability refinement,
+mirroring the full engine (archetype is NOT_APPLICABLE for banks/NBFCs;
+"other income" for a bank is largely fee/commission income, a normal core
+revenue line, not the same red flag it is for a non-financial company).
 """
 from __future__ import annotations
 
@@ -30,10 +46,12 @@ from app.calculations.balance_sheet_intelligence.archetype import classify_arche
 from app.calculations.cash_flow_intelligence.archetype import classify_cash_flow_archetype
 from app.calculations.cash_flow_intelligence.conversion import cfo_operating_profit_ratio
 from app.calculations.cash_flow_intelligence.volatility import classify_cfo_volatility
+from app.calculations.governance_scoring import clamp_score, compute_governance_penalty
 from app.calculations.score_refinement import (
     _BS_ARCHETYPE_PROXY, _bounded_blend, _derive_cashflow_proxy_score,
 )
 from app.calculations.scoring import classify_overall_rating, recompute_overall
+from app.quick_analysis.other_income_flag import compute_other_income_dependency
 
 # The engine's red-flag penalty (5 pts per triggered flag) can't be observed
 # from Yahoo. Across the 18 analysed companies the balance-sheet proxy sat at
@@ -97,24 +115,80 @@ def cash_flow_proxy(financial_data: dict, metrics: dict, framework_name: str) ->
     return proxy, archetype
 
 
-def approximate_refinement(scores: dict, financial_data: dict, metrics: dict, framework_name: str) -> dict:
+def profitability_proxy(db, company_id: str | None, symbol: str | None, framework_name: str,
+                        screener_pacer=None) -> tuple[float | None, dict | None]:
+    """Earnings-quality-only proxy (see module docstring) — `None` when
+    `db`/`company_id`/`symbol` weren't passed in, the company is a
+    financial institution, or neither the ledger nor a fresh Screener
+    ingest has other_income/PBT for it. Second return value is the raw
+    dependency dict (for `red_flags`/`refinement` detail), not an
+    "archetype" string like the other two proxies — there's no archetype
+    concept here. `screener_pacer` — see scorer.py's docstring — paces the
+    ingest-on-miss fallback across concurrent worker threads."""
+    if db is None or company_id is None or not symbol or sector_routing.is_financial_institution(framework_name):
+        return None, None
+    dependency = compute_other_income_dependency(db, company_id, symbol, screener_pacer=screener_pacer)
+    if dependency is None:
+        return None, None
+    return dependency["proxy_score"], dependency
+
+
+def approximate_refinement(scores: dict, financial_data: dict, metrics: dict, framework_name: str,
+                           db=None, company_id: str | None = None, screener_pacer=None) -> dict:
     """Returns a NEW scores dict shaped like the full pipeline's refined
-    scores, with `refinement` recording base/proxy/adjustment per category."""
+    scores, with `refinement` recording base/proxy/adjustment per category.
+    `db`/`company_id` are optional (every current caller passes them) —
+    enables the profitability earnings-quality proxy; omit for a bare
+    scores-only call and profitability is simply left unrefined, as before
+    this feature existed."""
     refined = dict(scores)
     detail: dict[str, dict] = {}
-    for category, (proxy, archetype) in (
+    other_income_dependency = None
+    for category, (proxy, extra) in (
         ("balance_sheet", balance_sheet_proxy(financial_data, metrics, framework_name)),
         ("cash_flow", cash_flow_proxy(financial_data, metrics, framework_name)),
+        ("profitability", profitability_proxy(db, company_id, financial_data.get("symbol"), framework_name,
+                                              screener_pacer=screener_pacer)),
     ):
+        if category == "profitability":
+            other_income_dependency = extra
+            archetype = None
+        else:
+            archetype = extra
         base = scores[category]
         value, adjustment = _bounded_blend(base, proxy)
         refined[category] = round(value, 1)
         detail[category] = {"base_score": base, "proxy_score": None if proxy is None else round(proxy, 2),
                             "adjustment": adjustment, "archetype": archetype}
-    refined["overall"] = recompute_overall(
+    if other_income_dependency and other_income_dependency["flagged"]:
+        detail["profitability"]["other_income_dependency"] = other_income_dependency
+        refined["red_flags"] = [
+            *(scores.get("red_flags") or []),
+            f"High Other-Income Dependency ({round(other_income_dependency['ratio'] * 100)}% of "
+            f"{other_income_dependency['period_type']} PBT, {other_income_dependency['period']})",
+        ]
+    overall = recompute_overall(
         {c: refined[c] for c in ("growth", "profitability", "cash_flow", "balance_sheet", "efficiency", "valuation")},
         scores["weights"],
     )
-    refined["overall_rating"] = classify_overall_rating(refined["overall"])
+    # Promoter-governance penalty (2026-09-28) — DB-read-only, no extra
+    # scraping: reads whatever `governance_events` the FULL pipeline's own
+    # "shareholding" ingestion already wrote for this company (NSE
+    # promoter/pledge data, unrelated to the Yahoo/Screener sources this
+    # module otherwise reads). `None` — no penalty applied — for a company
+    # that's never been through a full analysis, same graceful-absence
+    # contract as the other two proxies above.
+    governance_result = compute_governance_penalty(db, company_id) if db is not None and company_id else None
+    governance_penalty = (governance_result or {}).get("penalty") or 0.0
+    if governance_penalty:
+        overall = clamp_score(overall - governance_penalty)
+    if governance_result and governance_result.get("flags"):
+        refined["red_flags"] = [
+            *(refined.get("red_flags") or []),
+            *(f"{f['severity'].title()} — {f['description']}" for f in governance_result["flags"]),
+        ]
+    detail["governance"] = governance_result
+    refined["overall"] = overall
+    refined["overall_rating"] = classify_overall_rating(overall)
     refined["refinement"] = detail
     return refined

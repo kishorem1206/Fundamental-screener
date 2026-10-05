@@ -120,7 +120,8 @@ def ingest_balance_sheet(db: Session, company_id: str, symbol: str) -> list:
     rate-limit incident (Voltas cash-flow schedules) this same fix pattern
     was applied everywhere else for."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_client: openscreener not installed", symbol=symbol)
         return []
@@ -133,7 +134,7 @@ def ingest_balance_sheet(db: Session, company_id: str, symbol: str) -> list:
         if pass_index > 0:
             time.sleep(_SCREENER_REQUEST_DELAY_SECONDS)
         try:
-            stock = Stock(symbol, consolidated=consolidated)
+            stock = screener_stock(symbol, consolidated)
             rows = stock.balance_sheet()
         except Exception as e:
             logger.warning("screener_client: balance_sheet fetch failed", symbol=symbol,
@@ -193,7 +194,8 @@ def ingest_cash_flow(db: Session, company_id: str, symbol: str) -> list:
     2026-09-24: `_SCREENER_REQUEST_DELAY_SECONDS` between the two statement-
     type requests — see that constant's own module-level comment."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_client: openscreener not installed", symbol=symbol)
         return []
@@ -206,7 +208,7 @@ def ingest_cash_flow(db: Session, company_id: str, symbol: str) -> list:
         if pass_index > 0:
             time.sleep(_SCREENER_REQUEST_DELAY_SECONDS)
         try:
-            stock = Stock(symbol, consolidated=consolidated)
+            stock = screener_stock(symbol, consolidated)
             rows = stock.cash_flow()
         except Exception as e:
             logger.warning("screener_client: cash_flow fetch failed", symbol=symbol,
@@ -362,7 +364,8 @@ def ingest_cash_flow_schedules(db: Session, company_id: str, symbol: str) -> lis
     ~8-20s apart reliably succeeds where zero-delay back-to-back calls
     consistently 429'd."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_client: openscreener not installed", symbol=symbol)
         return []
@@ -375,7 +378,7 @@ def ingest_cash_flow_schedules(db: Session, company_id: str, symbol: str) -> lis
         if pass_index > 0:
             time.sleep(_SCREENER_REQUEST_DELAY_SECONDS)
         try:
-            stock = Stock(symbol, consolidated=consolidated)
+            stock = screener_stock(symbol, consolidated)
             stock.cash_flow()  # triggers the page fetch that populates page_html below
             screener_company_id = _extract_screener_company_id(stock.page_html)
         except Exception as e:
@@ -470,7 +473,8 @@ def ingest_ratios(db: Session, company_id: str, symbol: str) -> list:
     2026-09-24: `_SCREENER_REQUEST_DELAY_SECONDS` between the two statement-
     type requests — see that constant's own module-level comment."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_client: openscreener not installed", symbol=symbol)
         return []
@@ -483,7 +487,7 @@ def ingest_ratios(db: Session, company_id: str, symbol: str) -> list:
         if pass_index > 0:
             time.sleep(_SCREENER_REQUEST_DELAY_SECONDS)
         try:
-            stock = Stock(symbol, consolidated=consolidated)
+            stock = screener_stock(symbol, consolidated)
             rows = stock.ratios_history()
         except Exception as e:
             logger.warning("screener_client: ratios fetch failed", symbol=symbol,
@@ -537,13 +541,14 @@ def ingest_quarterly_metrics(db: Session, company_id: str, symbol: str) -> list:
     those stay BSE/NSE-only. Never raises — logs and returns an empty list
     on failure."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_client: openscreener not installed", symbol=symbol)
         return []
 
     try:
-        stock = Stock(symbol, consolidated=False)
+        stock = screener_stock(symbol, False)
         quarters = stock.quarterly_results()
     except Exception as e:
         logger.warning("screener_client: quarterly_results fetch failed", symbol=symbol, error=str(e))
@@ -750,13 +755,14 @@ def ingest_company_summary(db, company_id: str, symbol: str):
     from app.infrastructure.database.models import CompanySummary
 
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("screener_client: openscreener not installed", symbol=symbol)
         return None
 
     try:
-        stock = Stock(symbol, consolidated=True)
+        stock = screener_stock(symbol, True)
         summary = stock.summary()
     except Exception as e:
         logger.warning("screener_client: summary fetch failed", symbol=symbol, error=str(e))

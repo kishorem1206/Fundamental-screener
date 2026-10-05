@@ -7,11 +7,13 @@ down against the 4 quarters before that)."""
 from __future__ import annotations
 
 from app.calculations.quarterly_growth import (
+    _block_avg_delta_pp,
     _block_growth_pct,
     _weighted_growth_pct,
     compute_quarterly_growth,
 )
 from app.calculations.scoring import _annual_growth_score, _growth_score
+from app.infrastructure.database import metric_store
 
 
 def test_block_growth_anchors_to_the_most_recent_quarter():
@@ -79,3 +81,68 @@ def test_growth_score_falls_back_to_annual_when_no_quarterly_data():
     result = _growth_score(metrics)
     assert result == _annual_growth_score(metrics)
     assert "growth_score_quarterly" not in metrics
+
+
+# ── OPM margin trend (2026-09-29, explicit user request) ────────────────────
+
+def test_block_avg_delta_pp_anchors_to_the_most_recent_quarter():
+    # 9 values, newest last -> drop the OLDEST (index 0), same anchoring
+    # discipline _block_growth_pct() already enforces.
+    values = [40, 40, 40, 40, 40, 40, 40, 40, 20]  # a sharp final-quarter margin drop
+    delta = _block_avg_delta_pp(values)
+    # block1 = values[1:5] avg = 40; block2 = values[5:9] avg = (40+40+40+20)/4 = 35
+    assert delta == [35 - 40]
+
+
+def test_block_avg_delta_pp_needs_at_least_two_full_blocks():
+    assert _block_avg_delta_pp([1, 2, 3, 4, 5, 6, 7]) == []
+    assert _block_avg_delta_pp([1, 2, 3, 4, 5, 6, 7, 8]) != []
+
+
+def test_block_avg_delta_pp_is_a_point_difference_not_a_percent_growth():
+    # 20% -> 25% is a +5pp delta, NOT a +25% "growth rate" — confirms this
+    # helper never runs the _block_growth_pct() percent-of-percent math.
+    values = [20.0] * 4 + [25.0] * 4
+    assert _block_avg_delta_pp(values) == [5.0]
+
+
+def _seed_quarters(db, company_id, metric_key, values, start_year=2024):
+    """8 consecutive quarter-end periods, oldest first."""
+    quarters = ["03-31", "06-30", "09-30", "12-31"]
+    periods = []
+    y = start_year
+    for i in range(len(values)):
+        periods.append(f"{y}-{quarters[i % 4]}")
+        if i % 4 == 3:
+            y += 1
+    for period, value in zip(periods, values):
+        metric_store.insert_metric_value(
+            db, company_id=company_id, metric_key=metric_key, period=period, value=value,
+            unit="cr" if "opm" not in metric_key else "%", statement_type="CONSOLIDATED",
+            source="SCREENER", source_tier=2, reported_or_calculated="REPORTED", confidence="MEDIUM",
+        )
+
+
+def test_margin_contraction_pulls_the_quarterly_score_down(db):
+    from datetime import datetime, timezone
+    from app.infrastructure.database.models import Stock
+    now = datetime.now(timezone.utc)
+    company_id = "TEST:QGMARGIN"
+    db.add(Stock(id=company_id, symbol="QGMARGIN", exchange="TEST", company_name="QG Margin Ltd",
+                 is_active=True, created_at=now, updated_at=now))
+    db.flush()
+
+    flat_growth = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]  # no revenue/pat/eps growth at all
+    _seed_quarters(db, company_id, "qtr_sales", flat_growth)
+    _seed_quarters(db, company_id, "qtr_net_profit", flat_growth)
+    _seed_quarters(db, company_id, "qtr_eps", flat_growth)
+    contracting_opm = [40.0, 40.0, 40.0, 40.0, 25.0, 25.0, 25.0, 25.0]  # -15pp block-avg contraction
+    _seed_quarters(db, company_id, "qtr_opm", contracting_opm)
+
+    result = compute_quarterly_growth(db, company_id, "CONSOLIDATED")
+    assert result is not None
+    assert result["growth_pct"]["margin"] == -15.0
+    # revenue/pat/eps are all flat (0% growth -> neutral-ish ~55 on the
+    # annual CAGR bands) — the severe margin contraction must pull the
+    # blended score meaningfully below that neutral baseline.
+    assert result["score"] < 40.0

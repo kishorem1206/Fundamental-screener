@@ -70,7 +70,8 @@ def ingest_quarterly_results(db: Session, company_id: str, symbol: str) -> list:
     constant for the rate-limit incident (Voltas cash-flow schedules) this
     same fix pattern was applied everywhere else for."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("quarterly_results_client: openscreener not installed", symbol=symbol)
         return []
@@ -84,7 +85,7 @@ def ingest_quarterly_results(db: Session, company_id: str, symbol: str) -> list:
         if pass_index > 0:
             time.sleep(_SCREENER_REQUEST_DELAY_SECONDS)
         try:
-            stock = Stock(symbol, consolidated=consolidated)
+            stock = screener_stock(symbol, consolidated)
             rows = stock.quarterly_results()
         except Exception as e:
             logger.warning("quarterly_results_client: quarterly_results fetch failed", symbol=symbol,

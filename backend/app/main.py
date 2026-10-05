@@ -5,14 +5,19 @@ from fastapi.responses import JSONResponse
 
 from app.config import config
 from app.logger import logger
-from app.routes import health, stocks, fundamental, banking_data, screening, governance, valuation, sectors, sources, analyst_consensus, documents, company_summary, yfinance_extended, segments, market_movers, broker_reports, brands, concall, premium, history_charts, pl_intelligence, balance_sheet_intelligence, cash_flow_intelligence, quarterly_intelligence, bank_roe, company_scores, quick_scores
+from app.routes import health, stocks, fundamental, banking_data, screening, governance, valuation, sectors, sources, analyst_consensus, documents, company_summary, yfinance_extended, segments, market_movers, broker_reports, brands, concall, premium, history_charts, pl_intelligence, balance_sheet_intelligence, cash_flow_intelligence, quarterly_intelligence, bank_roe, company_scores, quick_scores, ipo_issues, bie, prices, framework
 from app.mcp.server import mcp_asgi_app, mcp_server
 from app.infrastructure.database.client import close_database
 from app.infrastructure.redis.client import close_redis
+from app.technical.infrastructure.redis.client import close_redis as close_technical_redis
+from app.technical.middleware.correlation import CorrelationMiddleware
+from app.technical.router import register_agents as register_technical_agents, router as technical_router
+from app.technical.shared.errors import AppError
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    register_technical_agents()
     logger.info("Fundamental Screener API started", port=config.api_port, env=config.node_env)
     # The MCP session manager runs its own task group for the life of the
     # process — app.mount() does NOT auto-start a mounted sub-app's lifespan,
@@ -23,6 +28,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down")
     close_database()
     close_redis()
+    close_technical_redis()
 
 
 app = FastAPI(
@@ -40,6 +46,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Sets request.state.correlation_id, which the technical screener's errors report.
+app.add_middleware(CorrelationMiddleware)
+
+
+@app.exception_handler(AppError)
+async def technical_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    correlation_id = getattr(request.state, "correlation_id", None)
+    logger.warning("App error", error_code=exc.code, message=exc.message, path=str(request.url))
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.code, "message": exc.message, "correlation_id": correlation_id},
+    )
 
 
 @app.exception_handler(Exception)
@@ -78,6 +98,11 @@ app.include_router(quarterly_intelligence.router)
 app.include_router(bank_roe.router)
 app.include_router(company_scores.router)
 app.include_router(quick_scores.router)
+app.include_router(ipo_issues.router)
+app.include_router(bie.router)
+app.include_router(prices.router)
+app.include_router(framework.router)
+app.include_router(technical_router)
 
 # Architecture v2 Stage 1: MCP interface layer, mounted here rather than run
 # as a separate process — see app/mcp/server.py's module docstring.

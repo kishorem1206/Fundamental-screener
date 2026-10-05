@@ -3,6 +3,7 @@ from sqlalchemy import (
     Date,
     String, Boolean, Integer, BigInteger, Numeric, Text,
     DateTime, JSON, ForeignKey, Index, UniqueConstraint,
+    PrimaryKeyConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
@@ -22,6 +23,8 @@ class Stock(Base):
     exchange: Mapped[str] = mapped_column(String, nullable=False)
     company_name: Mapped[str] = mapped_column(String, nullable=False)
     isin: Mapped[str | None] = mapped_column(String, nullable=True)
+    kite_instrument_token: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tradingview_symbol: Mapped[str | None] = mapped_column(String, nullable=True)
     sector: Mapped[str | None] = mapped_column(String, nullable=True)
     industry: Mapped[str | None] = mapped_column(String, nullable=True)
     basic_industry: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -30,6 +33,13 @@ class Stock(Base):
     market_cap_category: Mapped[str | None] = mapped_column(String, nullable=True)
     market_cap_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Set only for mainboard (EQ/BE) issues promoted from `fa_ipo_issues`
+    # into the stocks universe (app/ingestion/nse_ipo_client.py) — None for
+    # every stock added before this feature existed, and for anything not
+    # a recent listing. `is_ipo` (a stock has this set at all) and "recent"
+    # (this date within some window) are both just filters on this one
+    # column, not separate flags.
+    ipo_listing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -244,6 +254,41 @@ class QuickScore(Base):
     )
 
 
+class IPOIssue(Base):
+    """Raw NSE past/upcoming-issue data (app/ingestion/nse_ipo_client.py) —
+    every security type NSE reports (EQ/BE/SME/DEBT/N0/IV/RR/...), not just
+    the mainboard equity subset this app actually analyses. `stock_id` is
+    set only once the issue has been promoted into `stocks` (mainboard
+    EQ/BE, see nse_ipo_client.py's promotion step) — most rows (SME, debt,
+    InvITs, REITs) never get one. One row per (symbol, issue_start_date):
+    a company can raise more than once (an FPO after its IPO)."""
+
+    __tablename__ = "fa_ipo_issues"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    company_name: Mapped[str] = mapped_column(String, nullable=False)
+    symbol: Mapped[str] = mapped_column(String, nullable=False)
+    security_type: Mapped[str] = mapped_column(String, nullable=False)
+    issue_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    price_range_low: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    price_range_high: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    issue_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    issue_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    listing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
+    stock_id: Mapped[str | None] = mapped_column(String, ForeignKey("stocks.id", ondelete="SET NULL"), nullable=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "issue_start_date", name="uq_ipo_issue_symbol_start"),
+        Index("ix_fa_ipo_issues_symbol", "symbol"),
+        Index("ix_fa_ipo_issues_listing_date", "listing_date"),
+    )
+
+
 class Shareholding(Base):
     """One (company, quarter) shareholding-pattern snapshot from NSE —
     Architecture v2 Stage 3. promoter_pct/public_pct come straight from
@@ -407,8 +452,10 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    company_id: Mapped[str] = mapped_column(
-        String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False
+    # Nullable since 0035: sector- and economy-level sources (a bond-yield
+    # table, an IMF forecast) belong to no single company.
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=True
     )
     source: Mapped[str] = mapped_column(String, nullable=False)
     document_type: Mapped[str] = mapped_column(String, nullable=False)
@@ -417,9 +464,83 @@ class Document(Base):
     storage_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Citation fields (0035, app/bie): what a reader needs to find and trust
+    # the source. `human_url` is a readable rendering of a data file (NSE's
+    # iXBRL page for an XBRL instance) when one exists.
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    human_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    link_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    link_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("documents_company_idx", "company_id", "document_type"),
+    )
+
+
+class BieFact(Base):
+    """One sourced fact for the Business Intelligence Engine (app/bie) —
+    numeric or textual, about a company, a sector, or the economy.
+
+    Separate from `fa_metric_data_points` on purpose: that ledger has no
+    dimension (a segment, a subsidiary) and no page/locator, and 99.5% of
+    its rows cite an aggregator page. Every row here passes
+    `app/bie/evidence.py`'s write gate: a document-sourced fact carries the
+    archived document, a direct URL and a locator (PDF page or data-file
+    element); a calculated fact lists the facts it was computed from.
+
+    `nature` keeps what the company reported apart from what it merely
+    claims, what management guides to, and what this app assumes."""
+
+    __tablename__ = "bie_facts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    scope: Mapped[str] = mapped_column(String, nullable=False)  # COMPANY | SECTOR | MACRO
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=True
+    )
+    sector: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    fact_type: Mapped[str] = mapped_column(String, nullable=False)
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    dimension: Mapped[str] = mapped_column(String, nullable=False, default="")  # segment / entity name, "" if none
+    period_type: Mapped[str] = mapped_column(String, nullable=False, default="NA")  # FY | Q | YTD | INSTANT | NA
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    statement_type: Mapped[str] = mapped_column(String, nullable=False, default="NA")  # STANDALONE | CONSOLIDATED | NA
+
+    value_num: Mapped[float | None] = mapped_column(Numeric(28, 6), nullable=True)
+    value_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    attributes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    nature: Mapped[str] = mapped_column(String, nullable=False)
+    # REPORTED | COMPANY_CLAIM | MANAGEMENT_GUIDANCE | THIRD_PARTY | CALCULATED | ANALYST_ASSUMPTION
+
+    document_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    locator_type: Mapped[str] = mapped_column(String, nullable=False)  # PAGE | XBRL | JSON | TABLE | NONE
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-based PDF page, not the printed number
+    locator: Mapped[str | None] = mapped_column(Text, nullable=True)  # element + context, JSON path, table row
+    quote: Mapped[str | None] = mapped_column(Text, nullable=True)  # source text the value was read from
+    extraction_method: Mapped[str] = mapped_column(String, nullable=False)
+    source_tier: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[str] = mapped_column(String, nullable=False)  # HIGH | MEDIUM | LOW
+    inputs: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ids of the facts a CALCULATED fact used
+    formula: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    verification_status: Mapped[str] = mapped_column(String, nullable=False, default="UNVERIFIED")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("bie_facts_company_idx", "company_id", "fact_type", "key"),
+        Index("bie_facts_sector_idx", "scope", "sector", "fact_type"),
+        Index("bie_facts_document_idx", "document_id"),
     )
 
 
@@ -1156,4 +1277,387 @@ class PlIncomeQuality(Base):
 
     __table_args__ = (
         Index("pl_income_quality_company_idx", "company_id"),
+    )
+
+
+class BieAssumptionOverride(Base):
+    """An analyst's override of one model assumption (app/bie, phase 4.5).
+    Rows are never updated in place: changing or resetting an override sets
+    `superseded_at` on the old row and, for a change, inserts a new one, so
+    the table is also the audit trail. The system's own estimate is not
+    stored here — it is recomputed on every run and shown beside the
+    override. Only a person writes to this table; no model output does."""
+
+    __tablename__ = "bie_assumption_overrides"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    company_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False)
+    scenario: Mapped[str] = mapped_column(String, nullable=False)  # All | Bear | Base | Bull
+    unit: Mapped[str] = mapped_column(String, nullable=False)  # segment name, or "Company"
+    metric: Mapped[str] = mapped_column(String, nullable=False)
+    fiscal_year: Mapped[int | None] = mapped_column(Integer, nullable=True)  # year the FY ends; None = every forecast year
+    value: Mapped[float] = mapped_column(Numeric(20, 6), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[str] = mapped_column(String, nullable=False, default="MEDIUM")
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("bie_overrides_company_idx", "company_id", "superseded_at"),)
+
+
+# ── Technical screener tables ────────────────────────────────────────────────
+# Moved here from the separate Stock screener app (2026-10-05) when the two
+# apps were merged; `app/technical/` is their only reader and writer. The
+# tables already existed in the shared database — migration 0037 only creates
+# them on a database that never ran the old app.
+
+class Universe(Base):
+    __tablename__ = "universes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)           # NIFTY_50
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_built_in: Mapped[bool] = mapped_column("is_built_in", Boolean, default=False, nullable=False)
+    stock_count: Mapped[int] = mapped_column("stock_count", Integer, default=0, nullable=False)
+    last_synced_at: Mapped[datetime | None] = mapped_column("last_synced_at", DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=True), nullable=False)
+
+
+class UniverseMembership(Base):
+    __tablename__ = "universe_memberships"
+
+    universe_id: Mapped[str] = mapped_column(
+        "universe_id", String, ForeignKey("universes.id", ondelete="CASCADE"), nullable=False
+    )
+    stock_id: Mapped[str] = mapped_column(
+        "stock_id", String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False
+    )
+    added_at: Mapped[datetime] = mapped_column("added_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("universe_id", "stock_id"),
+        Index("universe_memberships_universe_idx", "universe_id"),
+        Index("universe_memberships_stock_idx", "stock_id"),
+    )
+
+
+class IndicatorDefinition(Base):
+    __tablename__ = "indicator_definitions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)           # RSI_14, BB_20_2
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)       # MOMENTUM | TREND | VOLATILITY | VOLUME
+    parameters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+
+class ScreenDefinition(Base):
+    __tablename__ = "screen_definitions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dsl_expression: Mapped[dict] = mapped_column("dsl_expression", JSON, nullable=False)
+    universe_id: Mapped[str | None] = mapped_column(
+        "universe_id", String, ForeignKey("universes.id", ondelete="SET NULL"), nullable=True
+    )
+    sort_field: Mapped[str | None] = mapped_column("sort_field", String, nullable=True)
+    sort_direction: Mapped[str] = mapped_column("sort_direction", String, default="DESC")
+    max_results: Mapped[int] = mapped_column("max_results", Integer, default=50)
+    is_active: Mapped[bool] = mapped_column("is_active", Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("screen_definitions_name_idx", "name"),
+    )
+
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_provider: Mapped[str | None] = mapped_column("llm_provider", String, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column("llm_model", String, nullable=True)
+    message_count: Mapped[int] = mapped_column("message_count", Integer, default=0, nullable=False)
+    last_active_at: Mapped[datetime] = mapped_column("last_active_at", DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        "session_id", String, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String, nullable=False)           # user | assistant | system
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    llm_intent_type: Mapped[str | None] = mapped_column("llm_intent_type", String, nullable=True)
+    correlated_screen_id: Mapped[str | None] = mapped_column(
+        "correlated_screen_id", String, ForeignKey("screen_definitions.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("chat_messages_session_idx", "session_id"),
+    )
+
+
+class IndexCategory(Base):
+    __tablename__ = "index_categories"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)           # BROAD_MARKET, SECTORAL, etc.
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=True), nullable=False)
+
+
+class NiftyIndex(Base):
+    __tablename__ = "nifty_indices"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)           # slug: "nifty-50", "nifty-bank"
+    index_name: Mapped[str] = mapped_column(String, nullable=False)     # "Nifty 50", "Nifty Bank"
+    index_code: Mapped[str] = mapped_column(String, nullable=False)     # same as id — slug form
+    category_id: Mapped[str] = mapped_column(
+        String, ForeignKey("index_categories.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("index_code", name="nifty_indices_index_code_uniq"),
+        Index("nifty_indices_category_idx", "category_id"),
+    )
+
+
+class IngestionRun(Base):
+    __tablename__ = "ingestion_runs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)         # RUNNING/SUCCESS/PARTIAL_SUCCESS/FAILED
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    files_discovered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    files_downloaded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    files_processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_read: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_inserted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_removed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_unchanged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    change_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ingestion_runs_started_at_idx", "started_at"),
+        Index("ingestion_runs_status_idx", "status"),
+    )
+
+
+class SourceFile(Base):
+    __tablename__ = "source_files"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    source_url: Mapped[str] = mapped_column(String, nullable=False)
+    index_id: Mapped[str] = mapped_column(
+        String, ForeignKey("nifty_indices.id", ondelete="RESTRICT"), nullable=False
+    )
+    ingestion_run_id: Mapped[str] = mapped_column(
+        String, ForeignKey("ingestion_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    file_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    processing_status: Mapped[str] = mapped_column(String, nullable=False)   # PENDING/OK/SKIPPED/ERROR
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("source_files_index_idx", "index_id"),
+        Index("source_files_run_idx", "ingestion_run_id"),
+    )
+
+
+class StagingIndexConstituent(Base):
+    __tablename__ = "staging_index_constituents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ingestion_run_id: Mapped[str] = mapped_column(
+        String, ForeignKey("ingestion_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    index_id: Mapped[str] = mapped_column(String, nullable=False)
+    raw_symbol: Mapped[str] = mapped_column(String, nullable=False)
+    raw_company_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_isin: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_stock_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    weight: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    validation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("staging_ic_run_idx", "ingestion_run_id"),
+        Index("staging_ic_index_idx", "index_id"),
+    )
+
+
+class IndexConstituent(Base):
+    __tablename__ = "index_constituents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    index_id: Mapped[str] = mapped_column(
+        String, ForeignKey("nifty_indices.id", ondelete="CASCADE"), nullable=False
+    )
+    stock_id: Mapped[str] = mapped_column(
+        String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False
+    )
+    weight: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ingestion_run_id: Mapped[str] = mapped_column(
+        String, ForeignKey("ingestion_runs.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("index_constituents_stock_idx", "stock_id"),
+        Index("index_constituents_index_idx", "index_id"),
+        Index("index_constituents_effective_idx", "effective_from", "effective_to"),
+        Index("index_constituents_index_stock_idx", "index_id", "stock_id"),
+        UniqueConstraint("index_id", "stock_id", "effective_from", name="ic_index_stock_from_uniq"),
+    )
+
+
+class DataProvenanceLog(Base):
+    __tablename__ = "data_provenance_log"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    stock_id: Mapped[str | None] = mapped_column(
+        "stock_id", String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=True
+    )
+    correlation_id: Mapped[str] = mapped_column("correlation_id", String, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column("retrieved_at", DateTime(timezone=True), nullable=False)
+    timeframe: Mapped[str | None] = mapped_column(String, nullable=True)
+    cache_hit: Mapped[bool] = mapped_column("cache_hit", Boolean, nullable=False)
+    cache_key: Mapped[str | None] = mapped_column("cache_key", String, nullable=True)
+    parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    __table_args__ = (
+        Index("data_provenance_correlation_idx", "correlation_id"),
+        Index("data_provenance_stock_idx", "stock_id"),
+        Index("data_provenance_retrieved_at_idx", "retrieved_at"),
+    )
+
+
+# ── Price store ──────────────────────────────────────────────────────────────
+# Daily history kept on disk so relative strength, drawdown, volatility and the
+# technical score read one consistent series instead of calling Yahoo per
+# request. See app/prices/.
+
+class PriceBar(Base):
+    """One trading day of one stock. `close` is adjusted for splits and bonus
+    issues only (what a chart shows); `adj_close` is also adjusted for
+    dividends and is the series every return is computed from."""
+
+    __tablename__ = "price_bars_daily"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False)
+    bar_date: Mapped[date] = mapped_column(Date, nullable=False)
+    open: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    high: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    low: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    close: Mapped[float] = mapped_column(Numeric(16, 4), nullable=False)
+    adj_close: Mapped[float] = mapped_column(Numeric(16, 4), nullable=False)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("stock_id", "bar_date"),
+        Index("price_bars_daily_date_idx", "bar_date"),
+    )
+
+
+class IndexBar(Base):
+    """One trading day of one NSE index, exactly as NSE publishes it in its
+    daily index file — including the index's own P/E, P/B and dividend yield."""
+
+    __tablename__ = "index_bars_daily"
+
+    index_name: Mapped[str] = mapped_column(String, nullable=False)
+    bar_date: Mapped[date] = mapped_column(Date, nullable=False)
+    open: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    high: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    low: Mapped[float | None] = mapped_column(Numeric(16, 4), nullable=True)
+    close: Mapped[float] = mapped_column(Numeric(16, 4), nullable=False)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    turnover_cr: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
+    pe: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    pb: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    div_yield: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    source_url: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("index_name", "bar_date"),
+        Index("index_bars_daily_date_idx", "bar_date"),
+    )
+
+
+# ── Stock Quality framework scores ───────────────────────────────────────────
+
+class FrameworkScore(Base):
+    """One row per stock, per day, per basis — the framework's separate scores
+    (app/framework/). Rows are kept, not overwritten across days, because
+    Quality Momentum (framework section 10) needs the score as it stood 6 and
+    12 months ago. `basis` is QUICK (Yahoo statements, whole universe) or FULL
+    (after a full analysis); a reader prefers FULL when both exist.
+
+    Each score column is filled by the phase that builds it and is NULL until
+    then; `detail` holds the inputs behind every score, keyed by score name."""
+
+    __tablename__ = "fw_scores"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    basis: Mapped[str] = mapped_column(String, nullable=False)
+    quality: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    business_quality: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    fundamental: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    quantitative: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    relative_strength: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    technical: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    valuation: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    valuation_view: Mapped[str | None] = mapped_column(String, nullable=True)
+    trend: Mapped[str | None] = mapped_column(String, nullable=True)
+    classification: Mapped[str | None] = mapped_column(String, nullable=True)
+    action: Mapped[str | None] = mapped_column(String, nullable=True)
+    sector_framework: Mapped[str | None] = mapped_column(String, nullable=True)
+    latest_fy: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reconstructed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("stock_id", "as_of", "basis"),
+        Index("fw_scores_as_of_idx", "as_of"),
+        Index("fw_scores_fundamental_idx", "fundamental"),
+        Index("fw_scores_quality_idx", "quality"),
     )

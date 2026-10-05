@@ -1224,6 +1224,10 @@ export interface CompanyScoreRow extends Record<ScoreKey, number | null>, Record
   analysis_id: string | null;
   sector_framework?: string | null;
   latest_fy?: string | null;
+  // Set only for a mainboard (EQ/BE) NSE listing promoted from the IPO
+  // tracker (backend app/ingestion/nse_ipo_client.py) — null for every
+  // stock added before that feature, or never an IPO issue at all.
+  ipo_listing_date: string | null;
   scored_at: string | null;
   latest_quarter_end: string | null;
 }

@@ -65,6 +65,43 @@ def test_financial_institutions_get_no_balance_sheet_refinement(analysed):
     assert refined["balance_sheet"] == q.scores["balance_sheet"]
 
 
+def test_governance_penalty_applies_to_quick_analysis_overall(db):
+    """Reuses `governance_scoring.compute_governance_penalty()` — reads
+    whatever `governance_events` the FULL pipeline's shareholding ingestion
+    already wrote, no extra scraping. Omitting `financial_data["symbol"]`
+    skips the other-income Screener-fallback path so this test needs no
+    network mocking."""
+    import uuid
+    from datetime import datetime, timezone
+    from app.infrastructure.database.models import GovernanceEvent, Shareholding
+
+    now = datetime.now(timezone.utc)
+    company_id = "TEST:GOVQA1"
+    db.add(Stock(id=company_id, symbol="GOVQA1", exchange="TEST", company_name="GOVQA1 Ltd",
+                 is_active=True, created_at=now, updated_at=now))
+    db.flush()
+    db.add(Shareholding(id=str(uuid.uuid4()), company_id=company_id, period_end="2026-06-30",
+                         promoter_pct=40.0, public_pct=60.0, pledge_pct=62.0,
+                         source_url="https://example.test", retrieved_at=now))
+    db.add(GovernanceEvent(id=str(uuid.uuid4()), company_id=company_id, event_type="PLEDGE_PRESENT",
+                            severity="HIGH", event_date="2026-06-30", description="62% pledged",
+                            evidence={}, source="NSE_SHAREHOLDING", created_at=now))
+    db.flush()
+
+    weights = {"growth": 0.18, "profitability": 0.22, "cash_flow": 0.17,
+               "balance_sheet": 0.17, "efficiency": 0.12, "valuation": 0.14}
+    scores = {c: 60.0 for c in CATS} | {"overall": 60.0, "weights": weights, "red_flags": []}
+    # Isolate the governance contribution: the balance_sheet/cash_flow
+    # proxies still fire on all-None inputs (default to a MIDDLE/neutral
+    # archetype rather than None), so compare against the same call
+    # without governance data rather than assuming those stay at 60.0.
+    baseline = approximate_refinement(scores, {}, {}, "Chemicals", db=None, company_id=None)
+    refined = approximate_refinement(scores, {}, {}, "Chemicals", db=db, company_id=company_id)
+    assert refined["overall"] == pytest.approx(baseline["overall"] - 8.0)
+    assert refined["red_flags"] == ["High — 62% pledged"]
+    assert refined["refinement"]["governance"]["penalty"] == 8.0
+
+
 def test_throttle_detection():
     assert _is_throttled({"error": "Too Many Requests. Rate limited. Try after a while."})
     assert not _is_throttled({"error": "No data found, symbol may be delisted"})

@@ -1,3 +1,5 @@
+import DeepReportButton from "./DeepReportButton";
+import DeepReportSection from "./sections/DeepReportSection";
 import { useState } from "react";
 import { FileText, Download, Gauge, ShieldCheck, Database, Sparkles, IndianRupee, Landmark, Percent, ArrowLeftRight } from "lucide-react";
 import type { FullAnalysis } from "../types";
@@ -23,11 +25,12 @@ import QuarterlySection from "./sections/QuarterlySection";
 import BankRoeSection from "./sections/BankRoeSection";
 import EditorialReport from "./EditorialReport";
 
-type Tab = "overview" | "editorial" | "summary" | "financials" | "quarterly" | "bank_roe" | "pl_intelligence" | "balance_sheet_intelligence" | "cash_flow_intelligence" | "scores" | "sector" | "peers" | "risks" | "news" | "calendar" | "concall" | "research" | "ai";
+type Tab = "overview" | "editorial" | "deep_report" | "summary" | "financials" | "quarterly" | "bank_roe" | "pl_intelligence" | "balance_sheet_intelligence" | "cash_flow_intelligence" | "scores" | "sector" | "peers" | "risks" | "news" | "calendar" | "concall" | "research" | "ai";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "editorial", label: "Editorial Report" },
+  { key: "deep_report", label: "Deep Report" },
   { key: "summary", label: "Summary" },
   { key: "financials", label: "Financials" },
   { key: "quarterly", label: "Quarterly" },
@@ -111,6 +114,7 @@ export default function AnalysisDashboard({ analysis }: Props) {
               {company?.sector}
               {company?.industry ? ` · ${company.industry}` : ""}
             </p>
+            {company?.symbol && <div className="mt-3"><DeepReportButton symbol={company.symbol} /></div>}
             {company?.current_price?.price != null && (
               <div className="flex items-baseline gap-2 mt-2 flex-wrap">
                 <span className="text-xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
@@ -244,6 +248,7 @@ export default function AnalysisDashboard({ analysis }: Props) {
         {tab === "editorial" && <EditorialReport analysis={analysis} />}
         {tab === "summary" && <SummarySection analysis={analysis} />}
         {tab === "financials" && <FinancialsSection analysis={analysis} />}
+        {tab === "deep_report" && <DeepReportSection analysis={analysis} />}
         {tab === "quarterly" && <QuarterlySection analysis={analysis} />}
         {tab === "bank_roe" && <BankRoeSection analysis={analysis} />}
         {tab === "pl_intelligence" && <PlIntelligenceSection analysis={analysis} />}

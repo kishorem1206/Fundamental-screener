@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     redis_key_prefix: str = "fa:"
 
+    llm_provider: str = "gpt-oss"  # read by app/technical/llm/factory.py
     llm_model: str = "openai/gpt-oss-20b"
     llm_api_key: str = ""
     llm_api_base_url: str = "https://api.groq.com/openai/v1"

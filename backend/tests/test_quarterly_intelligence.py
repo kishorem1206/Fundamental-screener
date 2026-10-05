@@ -9,7 +9,7 @@ from app.calculations.quarterly_intelligence.flags import (
     margin_inflection_flags,
     sequential_deceleration_flags,
 )
-from app.calculations.quarterly_intelligence.growth import qoq_delta_pp, qoq_growth, yoy_growth
+from app.calculations.quarterly_intelligence.growth import qoq_delta_pp, qoq_growth, yoy_delta_pp, yoy_growth
 
 
 def test_qoq_growth_basic_sequence():
@@ -46,6 +46,19 @@ def test_yoy_growth_matches_same_quarter_prior_year_when_present():
     series = {"2025-09-30": 120.0, "2026-09-30": 132.0}
     result = yoy_growth(series)
     assert result["2026-09-30"] == 10.0
+
+
+def test_yoy_delta_pp_is_a_point_delta_not_a_percent_change():
+    # 20% -> 25% is a +5pp delta, not a +25% growth rate.
+    series = {"2025-06-30": 20.0, "2026-06-30": 25.0}
+    assert yoy_delta_pp(series) == {"2026-06-30": 5.0}
+
+
+def test_yoy_delta_pp_looks_back_one_year_by_date_not_index():
+    series = {"2025-03-31": 40.0, "2026-03-31": 35.0, "2026-06-30": 30.0}  # 2025-06-30 missing
+    result = yoy_delta_pp(series)
+    assert result["2026-03-31"] == -5.0
+    assert "2026-06-30" not in result
 
 
 def test_margin_trend_reuses_pl_intelligence_classifier():

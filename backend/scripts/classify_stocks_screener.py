@@ -178,6 +178,110 @@ def run(limit: int | None = None, resume: bool = True):
     print(f"DONE. processed={processed} failed={failed} total_done={len(done)}")
 
 
+MISSING_PROGRESS_FILE = Path(__file__).resolve().parent.parent / "cache" / "classification_progress_missing.json"
+
+
+def run_for_missing(limit: int | None = None, resume: bool = True):
+    """Same breadcrumb scrape as `run()`, but sources symbols straight from
+    `stocks` (whichever active rows have no `basic_industry` yet) instead
+    of the static `screener_symbol_name_map.json` snapshot — that map was
+    built from the original market-cap>1000cr screen, so it has ZERO
+    overlap with the ~1,000 smaller-cap/newly-added stocks this backfill
+    targets (confirmed live, 2026-09-28: 1,016 stocks missing
+    basic_industry, 0 of them in the map). Feasibility spot-checked first
+    on 15 of the smallest/most obscure candidates — 15/15 had a real
+    breadcrumb, so Screener's classification coverage isn't the limiting
+    factor here.
+
+    Only touches macro_sector/sector/industry/basic_industry — market_cap/
+    market_cap_category are left as whatever Yahoo-based classification
+    already set (see nse_equity_list_client.py/nse_ipo_client.py), no
+    `screener_mcap_gt_1000.json` lookup needed for this batch. Own progress
+    file (`MISSING_PROGRESS_FILE`), separate from `run()`'s, so the two
+    backfills never step on each other's resume state."""
+    from app.infrastructure.database.models import Stock
+
+    db = get_db()
+    rows = (
+        db.query(Stock.symbol, Stock.company_name)
+        .filter(Stock.is_active.is_(True), Stock.basic_industry.is_(None))
+        .all()
+    )
+    symbol_to_name = {sym: name for sym, name in rows}
+
+    done = set()
+    if resume and MISSING_PROGRESS_FILE.exists():
+        done = set(json.loads(MISSING_PROGRESS_FILE.read_text()))
+
+    symbols = [s for s in symbol_to_name if s not in done]
+    if limit:
+        symbols = symbols[:limit]
+    print(f"{len(symbols)} symbols to classify ({len(done)} already done)", flush=True)
+
+    processed, failed = 0, 0
+    with sync_playwright() as p:
+        context = p.webkit.launch_persistent_context(PROFILE_DIR, headless=True)
+        page = context.new_page()
+
+        for i, symbol in enumerate(symbols):
+            name = symbol_to_name[symbol]
+            try:
+                page.goto(f"https://www.screener.in/company/{symbol}/", timeout=20000)
+                page.wait_for_timeout(600)
+                text = page.locator("body").inner_text(timeout=5000)
+                breadcrumb = parse_breadcrumb(text)
+                if not breadcrumb:
+                    failed += 1
+                    print(f"[{i+1}/{len(symbols)}] {symbol}: no breadcrumb found", flush=True)
+                    done.add(symbol)
+                    continue
+                macro, sector, industry, basic = breadcrumb
+
+                db.execute(
+                    sa.text(
+                        """
+                        UPDATE stocks SET
+                            macro_sector = :macro_sector,
+                            sector = :sector,
+                            industry = :industry,
+                            basic_industry = :basic_industry,
+                            updated_at = :now
+                        WHERE id = 'NSE:'||:symbol
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "macro_sector": macro,
+                        "sector": sector,
+                        "industry": industry,
+                        "basic_industry": basic,
+                        "now": datetime.now(timezone.utc),
+                    },
+                )
+                db.commit()
+                processed += 1
+                done.add(symbol)
+                if (i + 1) % 25 == 0:
+                    MISSING_PROGRESS_FILE.write_text(json.dumps(sorted(done)))
+                    print(f"[{i+1}/{len(symbols)}] progress saved ({processed} ok, {failed} failed)", flush=True)
+            except Exception as e:
+                failed += 1
+                done.add(symbol)  # a page-level failure (404, timeout) won't resolve on retry either
+                print(f"[{i+1}/{len(symbols)}] {symbol}: ERROR {e}", flush=True)
+                db.rollback()
+            time.sleep(2.5)  # same pacing run() settled on after rate-limit-looking blocks at 0.4s
+
+        context.close()
+
+    MISSING_PROGRESS_FILE.write_text(json.dumps(sorted(done)))
+    db.close()
+    print(f"DONE. processed={processed} failed={failed} total_done={len(done)}")
+
+
 if __name__ == "__main__":
-    lim = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    run(limit=lim)
+    args = [a for a in sys.argv[1:] if a != "--missing"]
+    lim = int(args[0]) if args else None
+    if "--missing" in sys.argv:
+        run_for_missing(limit=lim)
+    else:
+        run(limit=lim)

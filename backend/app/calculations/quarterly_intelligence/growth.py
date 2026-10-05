@@ -42,6 +42,32 @@ def qoq_delta_pp(series: dict[str, float]) -> dict[str, float]:
     return out
 
 
+def yoy_delta_pp(series: dict[str, float]) -> dict[str, float]:
+    """For a series that's ALREADY a percentage (e.g. OPM) — the raw
+    percentage-point delta vs the same quarter one year earlier (date-
+    matched like `yoy_growth()`, not `qoq_delta_pp()`'s positional
+    "preceding period on record"), not a percent-change-of-a-percent.
+    2026-09-29: added for quick_analysis's Yahoo-derived OPM trend, the
+    same "margin is a ratio, not a growth rate" distinction
+    `quarterly_growth.py::_block_avg_delta_pp()` makes for the full
+    pipeline's 4-quarter-block version of this same question."""
+    out: dict[str, float] = {}
+    for period, value in series.items():
+        try:
+            d = date.fromisoformat(period)
+        except ValueError:
+            continue
+        try:
+            prior_year_date = d.replace(year=d.year - 1)
+        except ValueError:
+            continue
+        prior_value = series.get(prior_year_date.isoformat())
+        if prior_value is None or value is None:
+            continue
+        out[period] = round(value - prior_value, 2)
+    return out
+
+
 def yoy_growth(series: dict[str, float]) -> dict[str, float]:
     """{period: pct_change_vs_the_same_quarter_one_year_earlier}. Looked up
     by date (period minus 1 year), not a fixed 4-quarter index offset —

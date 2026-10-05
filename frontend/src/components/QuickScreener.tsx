@@ -27,7 +27,7 @@ export default function QuickScreener({ onAnalyse, totalStocks }: Props) {
           <div className="max-w-2xl">
             <p className="eyebrow">Quick analysis</p>
             <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-              Fast, Yahoo-only scores for the whole market
+              Fast scores for the whole market, Screener first
             </h1>
             <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
               Same six scores and sector weights as the full analysis, computed in seconds from consolidated Yahoo

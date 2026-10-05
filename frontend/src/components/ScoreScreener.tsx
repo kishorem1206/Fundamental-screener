@@ -46,6 +46,14 @@ function RangeSlider({ value, onChange }: { value: Range; onChange: (v: Range) =
 const scoreColor = (v: number | null) =>
   v === null ? "var(--text-dim)" : v >= 70 ? "#4fb3a0" : v >= 50 ? "#c9a227" : "#d9694f";
 
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+// Recent IPOs only ever need a shortish lookback — a 15-year window keeps
+// the year dropdown quick to scan instead of listing every year NSE has
+// ever had a listing in.
+const IPO_FILTER_YEARS = Array.from({ length: 15 }, (_, i) => new Date().getFullYear() - i);
+
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
@@ -79,11 +87,16 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
     : BASE_SCORES;
 
   const [ranges, setRanges] = useState<Record<DisplayKey, Range>>(() => emptyRanges(SCORES));
-  const [sortBy, setSortBy] = useState<DisplayKey | "scored_at">("overall");
+  const [sortBy, setSortBy] = useState<DisplayKey | "scored_at" | "ipo_listing_date">("overall");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [search, setSearch] = useState("");
   const [sector, setSector] = useState("");
   const [sectors, setSectors] = useState<string[]>([]);
+  const [ipoOnly, setIpoOnly] = useState(false);
+  // Month/year chooser, not a raw date input — "" = no cutoff on either.
+  const [ipoSinceMonth, setIpoSinceMonth] = useState("");
+  const [ipoSinceYear, setIpoSinceYear] = useState("");
+  const ipoSince = ipoSinceMonth && ipoSinceYear ? `${ipoSinceYear}-${ipoSinceMonth}-01` : "";
   const [rows, setRows] = useState<CompanyScoreRow[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
@@ -106,6 +119,8 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
     const params: Record<string, string> = { sort_by: sortBy, order, limit: "100" };
     if (search.trim()) params.q = search.trim();
     if (sector) params.sector = sector;
+    if (ipoOnly) params.ipo_only = "true";
+    if (ipoOnly && ipoSince) params.ipo_since = ipoSince;
     for (const { key } of SCORES) {
       if (ranges[key][0] > FULL[0]) params[`min_${key}`] = String(ranges[key][0]);
       if (ranges[key][1] < FULL[1]) params[`max_${key}`] = String(ranges[key][1]);
@@ -116,10 +131,10 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
         .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load scores"));
     }, 300);
     return () => clearTimeout(t);
-  }, [ranges, sortBy, order, search, sector, source]);
+  }, [ranges, sortBy, order, search, sector, ipoOnly, ipoSince, source]);
 
-  const anyFilter = SCORES.some(({ key }) => isActive(ranges[key])) || search !== "" || sector !== "";
-  const clickSort = (key: DisplayKey | "scored_at") => {
+  const anyFilter = SCORES.some(({ key }) => isActive(ranges[key])) || search !== "" || sector !== "" || ipoOnly;
+  const clickSort = (key: DisplayKey | "scored_at" | "ipo_listing_date") => {
     if (sortBy === key) setOrder((o) => (o === "desc" ? "asc" : "desc"));
     else { setSortBy(key); setOrder("desc"); }
   };
@@ -136,7 +151,7 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
           <p className="text-xs mt-1" style={{ color: "var(--text-dim)" }}>{COPY[source].hint}</p>
         </div>
         {anyFilter && (
-          <button className="text-xs px-3 py-1.5 rounded-md" onClick={() => { setRanges(emptyRanges(SCORES)); setSearch(""); setSector(""); }}
+          <button className="text-xs px-3 py-1.5 rounded-md" onClick={() => { setRanges(emptyRanges(SCORES)); setSearch(""); setSector(""); setIpoOnly(false); setIpoSinceMonth(""); setIpoSinceYear(""); }}
                   style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}>
             Clear filters
           </button>
@@ -153,6 +168,41 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
           <option value="">All sectors</option>
           {sectors.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
         </select>
+        <label className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs cursor-pointer select-none"
+               style={{ background: ipoOnly ? "rgba(201,162,39,0.12)" : "var(--bg-card)",
+                        border: `1px solid ${ipoOnly ? "rgba(201,162,39,0.45)" : "var(--border-subtle)"}`,
+                        color: ipoOnly ? "var(--accent-gold-bright)" : "var(--text-secondary)" }}>
+          <input type="checkbox" checked={ipoOnly}
+                 onChange={(e) => { setIpoOnly(e.target.checked); if (!e.target.checked) { setIpoSinceMonth(""); setIpoSinceYear(""); } }}
+                 className="accent-current" />
+          Recent IPOs only
+        </label>
+        {ipoOnly && (
+          <div className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs"
+               style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
+            <span>Listed on/after</span>
+            <select value={ipoSinceMonth} onChange={(e) => setIpoSinceMonth(e.target.value)}
+                    className="bg-transparent text-xs" style={{ color: "var(--text-primary)" }}>
+              <option value="">Month</option>
+              {MONTHS.map((m, i) => (
+                <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
+              ))}
+            </select>
+            <select value={ipoSinceYear} onChange={(e) => setIpoSinceYear(e.target.value)}
+                    className="bg-transparent text-xs" style={{ color: "var(--text-primary)" }}>
+              <option value="">Year</option>
+              {IPO_FILTER_YEARS.map((y) => (
+                <option key={y} value={String(y)}>{y}</option>
+              ))}
+            </select>
+            {(ipoSinceMonth || ipoSinceYear) && (
+              <button onClick={() => { setIpoSinceMonth(""); setIpoSinceYear(""); }}
+                      className="text-xs" style={{ color: "var(--text-dim)" }} title="Clear date">
+                ×
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className={`grid grid-cols-2 md:grid-cols-4 ${source === "quick" ? "xl:grid-cols-9" : "xl:grid-cols-7"} gap-x-4 gap-y-3 mb-5`}>
@@ -180,6 +230,11 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
           <thead>
             <tr style={{ color: "var(--text-dim)" }} className="text-[11px] uppercase tracking-wide">
               <th className="text-left py-2 pr-3 font-semibold">Company</th>
+              {ipoOnly && (
+                <th className="text-right py-2 px-2 font-semibold cursor-pointer select-none whitespace-nowrap" onClick={() => clickSort("ipo_listing_date")}>
+                  Listed{sortBy === "ipo_listing_date" && <SortIcon size={11} className="inline ml-0.5" />}
+                </th>
+              )}
               {SCORES.map(({ key, label }) => (
                 <th key={key} className="text-right py-2 px-2 font-semibold cursor-pointer select-none whitespace-nowrap" onClick={() => clickSort(key)}>
                   {label}{sortBy === key && <SortIcon size={11} className="inline ml-0.5" />}
@@ -200,6 +255,11 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
                   <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{r.company_name}</div>
                   <div className="text-[11px]" style={{ color: "var(--text-dim)" }}>{r.symbol}{r.sector ? ` · ${r.sector}` : ""}</div>
                 </td>
+                {ipoOnly && (
+                  <td className="text-right py-2 px-2 text-[11px] whitespace-nowrap" style={{ color: "var(--text-dim)" }}>
+                    {fmtDate(r.ipo_listing_date)}
+                  </td>
+                )}
                 {SCORES.map(({ key }) => (
                   <td key={key} className="text-right py-2 px-2 tabular-nums font-semibold" style={{ color: scoreColor(r[key]) }}>
                     {r[key] === null ? "—" : r[key]!.toFixed(0)}
@@ -222,7 +282,7 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
               </tr>
             ))}
             {rows.length === 0 && !error && (
-              <tr><td colSpan={SCORES.length + (source === "quick" ? 3 : 2)} className="py-6 text-center text-sm" style={{ color: "var(--text-dim)" }}>
+              <tr><td colSpan={SCORES.length + (source === "quick" ? 3 : 2) + (ipoOnly ? 1 : 0)} className="py-6 text-center text-sm" style={{ color: "var(--text-dim)" }}>
                 {source === "quick" ? "No scored companies match these filters yet." : "No analysed companies match these filters."}
               </td></tr>
             )}

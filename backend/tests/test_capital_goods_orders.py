@@ -2,13 +2,29 @@
 the bridge into sector scoring."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+import pytest
+
 from app.calculations.quarterly_sector_kpis import compute_quarterly_sector_kpis
 from app.infrastructure.database import metric_store
+from app.infrastructure.database.models import Stock
 from app.ingestion import quarterly_operating_metrics_ingestion as q
 from app.sectors.ledger_bridge import QUARTERLY_FALLBACKS, inject_ledger_bridge
 
-_CO = "NSE:SUNTV"  # blank company (FK to stocks); real filings live on other ids
+_CO = "TEST:CAPGOODS"  # a company that exists only inside each test's transaction, so no real data can leak into the checks
 _P = "2026-06-30"
+
+
+@pytest.fixture(autouse=True)
+def _blank_company(request):
+    """Create the test's own company where the test uses the database (the tests assume it starts with no figures on file)."""
+    if "db" not in request.fixturenames:
+        return
+    session = request.getfixturevalue("db")
+    now = datetime.now(timezone.utc)
+    session.add(Stock(id=_CO, symbol="CAPGOODS", exchange="TEST", company_name="Capital Goods Test Ltd", is_active=True, created_at=now, updated_at=now))
+    session.flush()
 
 
 def _store(db, extracted, **kw):

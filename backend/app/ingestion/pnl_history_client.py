@@ -193,7 +193,8 @@ def ingest_pnl_history(db: Session, company_id: str, symbol: str) -> list:
     `screener_client.py`'s module-level comment on the shared constant for
     the full incident writeup)."""
     try:
-        from openscreener import Stock
+        from openscreener import Stock  # noqa: F401
+        from app.ingestion.screener_pages import screener_stock
     except ImportError:
         logger.warning("pnl_history_client: openscreener not installed", symbol=symbol)
         return []
@@ -207,7 +208,7 @@ def ingest_pnl_history(db: Session, company_id: str, symbol: str) -> list:
         if pass_index > 0:
             time.sleep(_SCREENER_REQUEST_DELAY_SECONDS)
         try:
-            stock = Stock(symbol, consolidated=consolidated)
+            stock = screener_stock(symbol, consolidated)
             rows = stock.profit_loss()
         except Exception as e:
             logger.warning("pnl_history_client: profit_loss fetch failed", symbol=symbol,

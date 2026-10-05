@@ -11,8 +11,10 @@ a typo never silently returns unfiltered results.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, case, desc, func
 
 from app.infrastructure.database.client import get_db
 from app.infrastructure.database.models import CompanyScore, Stock
@@ -20,9 +22,9 @@ from app.services.company_scores import SCORE_FIELDS
 
 router = APIRouter(prefix="/api/company-scores")
 
-_TEXT_FILTERS = {"q", "sector", "macro_sector", "rating", "valuation_view"}
+_TEXT_FILTERS = {"q", "sector", "macro_sector", "rating", "valuation_view", "ipo_only", "ipo_since"}
 _CONTROL_PARAMS = {"sort_by", "order", "limit", "offset"}
-_SORTABLE = set(SCORE_FIELDS) | {"scored_at", "latest_quarter_end", "company_name", "market_cap"}
+_SORTABLE = set(SCORE_FIELDS) | {"scored_at", "latest_quarter_end", "company_name", "market_cap", "ipo_listing_date"}
 _RANGE_PARAMS = {f"{bound}_{field}" for field in SCORE_FIELDS for bound in ("min", "max")}
 
 
@@ -35,6 +37,7 @@ def _row_dict(score, stock: Stock) -> dict:
         "stock_id": stock.id, "symbol": stock.symbol, "company_name": stock.company_name,
         "sector": stock.sector, "macro_sector": stock.macro_sector,
         "market_cap": _num(stock.market_cap),
+        "ipo_listing_date": stock.ipo_listing_date.isoformat() if stock.ipo_listing_date else None,
         **{f: _num(getattr(score, f)) for f in SCORE_FIELDS},
         "overall_rating": score.overall_rating, "valuation_view": score.valuation_view,
         "red_flags": score.red_flags or [],
@@ -109,13 +112,37 @@ def list_scores(request: Request, model, extra_numeric_fields: frozenset[str] = 
         if params.get("q"):
             like = f"%{params['q'].strip()}%"
             query = query.filter(Stock.company_name.ilike(like) | Stock.symbol.ilike(like))
+        if params.get("ipo_only", "").lower() in ("1", "true"):
+            query = query.filter(Stock.ipo_listing_date.isnot(None))
+        if params.get("ipo_since"):
+            # Implies ipo_only — a listing-date cutoff only makes sense
+            # among IPO stocks, and "entered after this date" is exactly
+            # what the frontend's date filter means (same column, just a
+            # user-chosen cutoff instead of "any listing date at all").
+            try:
+                since = date.fromisoformat(params["ipo_since"])
+            except ValueError:
+                raise HTTPException(status_code=400, detail="ipo_since must be YYYY-MM-DD")
+            query = query.filter(Stock.ipo_listing_date >= since)
 
         total = query.count()
         sort_column = {
             "company_name": Stock.company_name, "market_cap": Stock.market_cap,
+            "ipo_listing_date": Stock.ipo_listing_date,
         }.get(sort_by) or getattr(model, sort_by)
         direction = asc if order == "asc" else desc
-        rows = query.order_by(direction(sort_column).nulls_last(), Stock.symbol).offset(offset).limit(limit).all()
+        ordering = [direction(sort_column).nulls_last(), Stock.symbol]
+        if params.get("q"):
+            # A search puts the stock whose symbol was typed first, then symbols and names
+            # starting with it, then looser matches; the chosen sort applies within each group.
+            term = params["q"].strip()
+            ordering.insert(0, case(
+                (func.lower(Stock.symbol) == term.lower(), 0),
+                (Stock.symbol.ilike(f"{term}%"), 1),
+                (Stock.company_name.ilike(f"{term}%"), 2),
+                else_=3,
+            ))
+        rows = query.order_by(*ordering).offset(offset).limit(limit).all()
 
         return {"total": total, "limit": limit, "offset": offset, "results": [_row_dict(s, st) for s, st in rows]}
     finally:

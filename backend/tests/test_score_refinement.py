@@ -150,3 +150,49 @@ def test_apply_score_refinement_all_none_engines_keeps_overall_stable():
     assert result["profitability"] == 60.0
     assert result["balance_sheet"] == 60.0
     assert result["cash_flow"] == 60.0
+
+
+# ── governance penalty (applied to `overall` directly) ─────────────────────
+
+def _flat_scores(weights):
+    return {
+        "overall": 60.0, "growth": 60.0, "profitability": 60.0, "cash_flow": 60.0,
+        "balance_sheet": 60.0, "efficiency": 60.0, "valuation": 60.0, "weights": weights,
+        "red_flags": [],
+    }
+
+
+def test_governance_penalty_reduces_overall_but_not_categories():
+    weights = {"growth": 0.18, "profitability": 0.22, "cash_flow": 0.17,
+               "balance_sheet": 0.17, "efficiency": 0.12, "valuation": 0.14}
+    scores = _flat_scores(weights)
+    governance_result = {"penalty": 8.0, "flags": [
+        {"event_type": "PLEDGE_PRESENT", "severity": "HIGH", "event_date": "2026-06-30",
+         "description": "62% pledged"},
+    ]}
+    result = apply_score_refinement(scores, None, None, None, governance_result)
+    assert result["profitability"] == 60.0  # governance never touches a category score
+    assert result["overall"] == 60.0 - 8.0
+    assert result["refinement"]["governance"] == governance_result
+    assert result["red_flags"] == ["High — 62% pledged"]
+
+
+def test_no_governance_result_leaves_overall_unchanged():
+    weights = {"growth": 0.18, "profitability": 0.22, "cash_flow": 0.17,
+               "balance_sheet": 0.17, "efficiency": 0.12, "valuation": 0.14}
+    scores = _flat_scores(weights)
+    result = apply_score_refinement(scores, None, None, None, None)
+    assert result["overall"] == 60.0
+    assert result["refinement"]["governance"] is None
+    assert result["red_flags"] == []
+
+
+def test_governance_penalty_never_pushes_overall_below_zero():
+    weights = {"growth": 0.18, "profitability": 0.22, "cash_flow": 0.17,
+               "balance_sheet": 0.17, "efficiency": 0.12, "valuation": 0.14}
+    scores = _flat_scores(weights)
+    scores["growth"] = scores["profitability"] = scores["cash_flow"] = 5.0
+    scores["balance_sheet"] = scores["efficiency"] = scores["valuation"] = 5.0
+    governance_result = {"penalty": 20.0, "flags": []}
+    result = apply_score_refinement(scores, None, None, None, governance_result)
+    assert result["overall"] >= 0.0

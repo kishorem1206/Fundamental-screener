@@ -146,6 +146,32 @@ Skipping this after a UI change means the downloaded HTML silently keeps serving
 
 ---
 
+## Recent IPOs
+
+Tracks every NSE IPO (from NSE's own `/api/public-past-issues` + `/api/all-upcoming-issues` endpoints — see `backend/app/ingestion/nse_ipo_client.py`), and promotes mainboard (EQ/BE) listings into the stocks universe with a Yahoo-only quick score. SME-board, debt/NCDs, InvITs and REITs are stored in `fa_ipo_issues` for reference but never promoted — they don't fit this app's equity-scoring model.
+
+**Run it manually:**
+```bash
+cd backend && .venv/bin/python -m scripts.update_ipo_universe
+```
+
+**Weekly automatic run (macOS `launchd`):** a job is installed at `~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist`, firing every Monday 8am. It only runs while your Mac is on, and needs Docker (Postgres/Redis) already up — if either is asleep/off at trigger time, that week's run just fails silently; the next Monday's run catches up since the whole pipeline is idempotent. Logs land in `backend/cache/ipo_update.log`.
+
+```bash
+# check it's loaded
+launchctl list | grep fundamentalscreener
+
+# reload after editing the plist
+launchctl unload ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
+launchctl load ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
+
+# remove it entirely
+launchctl unload ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
+rm ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
+```
+
+---
+
 ## API Routes — Intelligence Engines
 
 Three additive analysis engines (`Important md files/ARCHITECTURE.md`'s "Three new
@@ -297,3 +323,50 @@ uv run uvicorn app.main:app --port 3002 --reload
 cd "/Users/kishore/Downloads/My personal apps/Fundamental screener/frontend"
 npm run dev
 ```
+
+---
+
+## Technical screener (merged from the Stock screener app)
+
+The technical screener now runs inside this backend — there is no second
+server to start. Its routes are under `/api/technical`:
+
+```bash
+curl -s http://localhost:3002/api/technical/health
+curl -s http://localhost:3002/api/technical/universes
+curl -s -X POST http://localhost:3002/api/technical/macd/scan -H 'content-type: application/json' -d '{"universe_id":"NIFTY_50"}'
+```
+
+Code: `backend/app/technical/`. Tests: `backend/tests/technical/`.
+Docker services: `containers/docker-compose.yml` in this repo (same containers and volumes as before).
+Old-to-new path map: `Important md files/Technical screener/MERGED_INTO_FUNDAMENTAL_SCREENER.md`.
+
+---
+
+## Price store (daily prices for stocks and indices)
+
+Relative strength, drawdown, volatility and the technical score read stored
+daily history from two tables instead of calling Yahoo on every request.
+
+| Table | What | Source |
+|---|---|---|
+| `index_bars_daily` | Every NSE index: open, high, low, close, volume, turnover, P/E, P/B, dividend yield | NSE daily index file `nsearchives.nseindia.com/content/indices/ind_close_all_DDMMYYYY.csv` |
+| `price_bars_daily` | Every active stock: open, high, low, close, adjusted close, volume | Yahoo Finance daily history (adjusted for splits, bonuses and dividends) |
+
+```bash
+cd backend
+.venv/bin/python -m app.prices.runner              # daily update: only the new days
+.venv/bin/python -m app.prices.runner --years 3    # first fill, or a full re-read
+.venv/bin/python -m app.prices.runner --check      # compare stored closes with NSE's official bhavcopy
+```
+
+The daily update re-reads a stock's whole history when Yahoo has restated it
+(split, bonus or dividend). Run it after the market closes; NSE publishes the
+day's files in the evening.
+
+API: `/api/prices/status`, `/api/prices/check`, `/api/prices/indices`,
+`/api/prices/index/{name}`, `/api/prices/stock/{symbol}`.
+
+Which index each stock is measured against: `backend/app/prices/benchmarks.py`.
+Index constituents (33 indices) are loaded by the technical screener's Nifty
+ingestion: `curl -X POST "http://localhost:3002/api/technical/admin/nifty/ingest?dry_run=false"`.

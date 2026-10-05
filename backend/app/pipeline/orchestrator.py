@@ -270,6 +270,15 @@ def run_analysis_pipeline(analysis_id: str, stock_id: str) -> None:
                 "market_cap_category": stock.market_cap_category,
                 "isin": stock.isin,
             }
+            # The deep report (app/bie: sourced facts from exchange filings, the sector-first PDF and the Excel model) is
+            # built alongside every full analysis, on its own thread so it never holds this pipeline up or fails it.
+            # A company built within the last week is left alone. Its progress shows on the dashboard's Deep Report page.
+            try:
+                from datetime import timedelta
+                from app.bie.jobs import start_in_background
+                company_info["deep_report"] = start_in_background(stock.symbol, if_older_than=timedelta(days=7))
+            except Exception as deep_error:  # noqa: BLE001
+                logger.warning("deep report build could not be started", symbol=stock.symbol, error=str(deep_error))
             # Fetched fresh here (not reused from Stage 2's cached financial
             # data, which can be hours old by report time) — see
             # app/ingestion/live_price.py's module docstring for why this is
@@ -1299,14 +1308,22 @@ def run_analysis_pipeline(analysis_id: str, stock_id: str) -> None:
         # dict `compute_scores()` already chose. Every blend is bounded
         # (+/-10 pts per category, see `score_refinement.py`'s own
         # docstring) and recorded in `scores["refinement"]` for
-        # traceability. Skips cleanly if the "scoring" stage itself failed
-        # upstream (no `analysis.scores` to refine) — never fails the
-        # overall pipeline. ──────────────────────────────────────────────────
+        # traceability. Also applies a bounded promoter-governance penalty
+        # (2026-09-28, see `governance_scoring.py`) directly on `overall`,
+        # from the `governance_events` the "shareholding" ingestion earlier
+        # in this same run already detected (pledge/promoter-holding-
+        # decline) — never re-derived here, just read and scored. Skips
+        # cleanly if the "scoring" stage itself failed upstream (no
+        # `analysis.scores` to refine) — never fails the overall
+        # pipeline. ──────────────────────────────────────────────────
         _set_stage(db, analysis, "score_refinement", "RUNNING", 10, "Refining overall score with intelligence-engine signals")
         try:
+            from app.calculations.governance_scoring import compute_governance_penalty
             from app.calculations.score_refinement import apply_score_refinement
             if analysis.scores:
-                refined_scores = apply_score_refinement(analysis.scores, pli_result, bsi_result, cfi_result)
+                governance_result = compute_governance_penalty(db, stock.id)
+                refined_scores = apply_score_refinement(analysis.scores, pli_result, bsi_result, cfi_result,
+                                                          governance_result)
                 _update_analysis(db, analysis, scores=refined_scores, overall_score=refined_scores["overall"],
                                   ai_rating=refined_scores.get("overall_rating"))
                 pre = refined_scores.get("refinement", {}).get("pre_refinement_overall")
@@ -1332,6 +1349,20 @@ def run_analysis_pipeline(analysis_id: str, stock_id: str) -> None:
         except Exception as e:
             db.rollback()
             logger.warning("Company score snapshot failed, continuing without it", error=str(e))
+
+        # ── Stock Quality framework scores (app/framework/) from this
+        # analysis's final scores and metrics. Never fails the pipeline. ──────
+        try:
+            from app.framework import engine as framework, store as framework_store
+            from app.sectors.registry import get_framework as _fw_sector
+            _fw_name = _fw_sector(stock.sector or "", industry=stock.industry or "",
+                                  basic_industry=stock.basic_industry or "").sector_name
+            framework.score_company(db, stock.id, framework_store.FULL, analysis.scores or {},
+                                    analysis.metrics or {}, analysis.financial_data or {}, _fw_name)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning("Framework scores failed, continuing without them", error=str(e))
 
         # ── Stage 13: Report Generation ───────────────────────────────────────
         # A headless-Chromium snapshot of the Editorial Report tab itself
