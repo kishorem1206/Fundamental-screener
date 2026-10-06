@@ -84,8 +84,8 @@ def compute_fundamental(category_scores: dict, metrics: dict, financial_data: di
     new = {
         "earnings_consistency": inputs.earnings_consistency(metrics, financial_data, db, company_id),
         "working_capital_trend": inputs.working_capital_trend(metrics, lender),
-        "share_dilution": inputs.share_dilution(financial_data),
-        "dividend_sustainability": inputs.dividend_sustainability(financial_data, metrics, lender),
+        "share_dilution": inputs.share_dilution(financial_data, db, company_id),
+        "dividend_sustainability": inputs.dividend_sustainability(financial_data, metrics, lender, db, company_id),
     }
     doubling = inputs.double_in(metrics, series)
     long_run = long_run_growth(series)

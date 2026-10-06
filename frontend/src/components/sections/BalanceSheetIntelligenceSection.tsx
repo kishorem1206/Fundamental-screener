@@ -263,7 +263,8 @@ export default function BalanceSheetIntelligenceSection({ analysis }: { analysis
             <StatBlock label="Liabilities/Equity" value={fmt(dm.liabilities_to_equity, "x", 2)} />
             <StatBlock label="Net Debt" value={fmtCr(dm.net_debt)} sub={dm.net_cash_position ? "Net cash position" : undefined} />
             <StatBlock label="Net Debt/EBITDA" value={fmt(dm.net_debt_to_ebitda, "x")} />
-            <StatBlock label="ROCE" value={fmt(dm.roce, "%")} sub={dm.capital_employed_methodology ? "Total Assets − Current Liabilities" : undefined} />
+            <StatBlock label="ROCE" value={fmt(dm.roce, "%")}
+                       sub={dm.roce_source ? "as published by Screener.in" : dm.capital_employed_methodology ? "computed: Total Assets − Current Liabilities" : undefined} />
             <StatBlock label="EBIT Margin × Turnover" value={`${fmt(dm.ebit_margin, "%")} × ${fmt(dm.capital_employed_turnover, "x", 2)}`} />
           </div>
         </ChartCard>

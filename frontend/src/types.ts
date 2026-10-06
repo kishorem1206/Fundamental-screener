@@ -225,6 +225,9 @@ export interface Scores {
   overall_rating: string | null;
   valuation_view: string | null;
   sector_matched: boolean;
+  // How the direction of returns and margins moved `profitability` (backend
+  // scoring.py::profitability_direction): points, and the trend label per metric.
+  profitability_direction?: { adjustment: number; signals: Record<string, string> };
   red_flags: string[];
   weights: Record<string, number>;
 }
@@ -999,6 +1002,8 @@ export interface BalanceSheetIntelligence {
   liabilities: Record<string, number | null>;
   equity: { equity_capital: number | null; reserves: number | null; total_equity: number | null };
   derived_metrics: {
+    roce_source?: string | null;       // set when ROCE is Screener's own published figure
+    roce_own_method?: number | null;   // this engine's Total Assets − Current Liabilities figure, kept for the DuPont split
     total_equity?: number | null;
     external_liabilities?: number | null;
     debt_to_equity: number | null;

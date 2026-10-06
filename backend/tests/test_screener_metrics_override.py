@@ -188,9 +188,46 @@ def test_balance_sheet_overrides_apply_correct_values(monkeypatch):
     assert result["receivable_days"] == 79.0
     assert result["ebitda_margin"] == 18.0   # 900/5000*100
     assert result["ebit_margin"] == 16.0     # 800/5000*100
-    for key in ("roce", "debt_to_equity", "net_debt_to_ebitda", "inventory_days",
+    for key in ("debt_to_equity", "net_debt_to_ebitda", "inventory_days",
                 "receivable_days", "ebitda_margin", "ebit_margin"):
         assert result["_metric_sources"][key] == "SCREENER"
+    # No Screener ROCE row for this company (2026-10-06: ROCE comes from Screener's own
+    # published row; the engine's figure is the fallback and is labelled as computed).
+    assert result["_metric_sources"]["roce"].startswith("COMPUTED")
+
+
+def test_roce_is_screeners_own_published_figure_everywhere(db):
+    """One ROCE on every page: Screener's yearly "ROCE %" row sets the latest
+    value, series, trend, averages and peak/trough, replacing other formulas."""
+    from datetime import datetime, timezone
+    from app.calculations import screener_roce
+    from app.infrastructure.database import metric_store
+    from app.infrastructure.database.models import Stock
+
+    now = datetime.now(timezone.utc)
+    db.add(Stock(id="TEST:ROCE", symbol="ROCE", exchange="TEST", company_name="x", is_active=False, created_at=now, updated_at=now))
+    db.flush()
+    for period, value in (("2023-03-31", 52.0), ("2024-03-31", 52.0), ("2025-03-31", 59.0), ("2026-03-31", 48.0)):
+        metric_store.insert_metric_value(db, company_id="TEST:ROCE", metric_key="bs_ratio_roce_percent", period=period, value=value,
+                                         unit="%", source="SCREENER", source_tier=2, confidence="MEDIUM",
+                                         statement_type="CONSOLIDATED", reported_or_calculated="REPORTED")
+    metrics = {"roce": 32.6, "roce_series": {"FY2026": 30.0}, "roce_trend": "IMPROVING"}  # another method's figures
+    sources: dict = {}
+    assert screener_roce.apply_to_metrics(metrics, sources, db, "TEST:ROCE")
+    assert metrics["roce"] == 48.0 and metrics["roce_series"] == {"FY2023": 52.0, "FY2024": 52.0, "FY2025": 59.0, "FY2026": 48.0}
+    assert metrics["roce_trend"] in ("DETERIORATING", "STRONGLY_DETERIORATING") and metrics["roce_peak"] == 59.0
+    assert metrics["roce_3y_avg"] == 53.0 and metrics["roce_cycle_position"] == 0.0 and sources["roce"] == "SCREENER_RATIOS"
+    # the framework's annual series reads the same row
+    from app.framework.screener_series import annual
+    for period, sales in (("2023-03-31", 100.0), ("2024-03-31", 110.0), ("2025-03-31", 120.0), ("2026-03-31", 130.0)):
+        for key, v in (("pnl_sales", sales), ("reserves", 50.0), ("equity_capital", 10.0)):
+            metric_store.insert_metric_value(db, company_id="TEST:ROCE", metric_key=key, period=period, value=v, unit="cr",
+                                             source="SCREENER", source_tier=2, confidence="MEDIUM",
+                                             statement_type="STANDALONE", reported_or_calculated="REPORTED")
+    rows = annual(db, "TEST:ROCE")["rows"]
+    assert rows["2026-03-31"]["roce"] == 48.0 and rows["2024-03-31"]["roce"] == 52.0
+    # a company Screener publishes no ROCE for is left alone
+    assert not screener_roce.apply_to_metrics({"roce": 9.0}, {}, db, "TEST:NOBODY")
 
 
 def test_balance_sheet_overrides_skip_when_no_period(monkeypatch):

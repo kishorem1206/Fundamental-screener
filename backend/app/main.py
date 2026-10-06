@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import config
 from app.logger import logger
-from app.routes import health, stocks, fundamental, banking_data, screening, governance, valuation, sectors, sources, analyst_consensus, documents, company_summary, yfinance_extended, segments, market_movers, broker_reports, brands, concall, premium, history_charts, pl_intelligence, balance_sheet_intelligence, cash_flow_intelligence, quarterly_intelligence, bank_roe, company_scores, quick_scores, ipo_issues, bie, prices, framework
+from app.routes import health, stocks, fundamental, banking_data, screening, governance, valuation, sectors, sources, analyst_consensus, documents, company_summary, yfinance_extended, segments, market_movers, broker_reports, brands, concall, premium, history_charts, pl_intelligence, balance_sheet_intelligence, cash_flow_intelligence, quarterly_intelligence, bank_roe, company_scores, quick_scores, ipo_issues, bie, prices, framework, portfolio, nse
 from app.mcp.server import mcp_asgi_app, mcp_server
 from app.infrastructure.database.client import close_database
 from app.infrastructure.redis.client import close_redis
@@ -29,6 +29,8 @@ async def lifespan(app: FastAPI):
     close_database()
     close_redis()
     close_technical_redis()
+    from app.portfolio.kite_link import kite
+    kite.close()
 
 
 app = FastAPI(
@@ -102,6 +104,8 @@ app.include_router(ipo_issues.router)
 app.include_router(bie.router)
 app.include_router(prices.router)
 app.include_router(framework.router)
+app.include_router(portfolio.router)
+app.include_router(nse.router)
 app.include_router(technical_router)
 
 # Architecture v2 Stage 1: MCP interface layer, mounted here rather than run

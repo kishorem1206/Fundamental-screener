@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart } from "lucide-react";
+import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase } from "lucide-react";
 import type { Stock } from "../types";
 
-export type Section = "combined" | "explore" | "quick" | "technical" | "assumptions";
+export type Section = "combined" | "explore" | "quick" | "technical" | "portfolio" | "assumptions";
 
 interface Props {
   allStocks: Stock[];
@@ -136,6 +136,7 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
           { key: "explore" as const, label: "Full Analysis", Icon: LayoutGrid },
           { key: "quick" as const, label: "Quick Screener", Icon: Zap },
           { key: "technical" as const, label: "Technical Screener", Icon: CandlestickChart },
+          { key: "portfolio" as const, label: "Portfolio", Icon: Briefcase },
           { key: "assumptions" as const, label: "Assumptions", Icon: SlidersHorizontal },
         ]).map(({ key, label, Icon }) => {
           const active = !showBack && section === key;

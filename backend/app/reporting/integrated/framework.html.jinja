@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ stock.company_name }} — integrated report</title>
+<style>{{ style | safe }}
+.scoregrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+.scoregrid > div { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 4.5mm 5mm; }
+.scoregrid .k { font-size: 0.74rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+.scoregrid .v { font-family: "Fraunces", Georgia, serif; font-size: 1.9rem; color: var(--deep); margin-top: 1mm; }
+.scoregrid .b { font-size: 0.72rem; color: var(--faint); }
+.decision { background: var(--deep); color: #f8f5ea; border-radius: 18px; padding: 6mm 7mm; }
+.decision .cls { font-family: "Fraunces", Georgia, serif; font-size: 1.7rem; color: #f8f5ea; }
+.decision .eyebrow { color: #e4c474; }
+.decision .sub { color: #d5e2dc; font-size: 0.95rem; margin-top: 1mm; }
+td.facts { text-align: left; font-size: 0.74rem; color: var(--ink-3); font-weight: 400; }
+td.src { text-align: left; font-size: 0.68rem; color: var(--faint); font-weight: 400; }
+ul.tight { margin: 1mm 0 2mm 4mm; padding: 0; } ul.tight li { margin: 0.6mm 0; }
+.good { color: var(--accent); } .bad { color: var(--coral); }
+section { break-inside: avoid; page-break-inside: avoid; }
+</style></head>
+<body>
+
+<div class="cover">
+  <div class="band">
+    <div class="eyebrow">Integrated report · {{ generated.strftime("%d %B %Y") }}</div>
+    <h1>{{ stock.company_name }}</h1>
+    <div class="sub">{{ stock.exchange }}: {{ stock.symbol }} · {{ stock.sector or "—" }}{% if stock.industry %} · {{ stock.industry }}{% endif %}</div>
+  </div>
+  <div class="hero">
+    <div class="eyebrow">Stock Quality framework</div>
+    <div class="standfirst">{{ decision.classification or "Not yet classified" }}{% if decision.action %} — {{ decision.action | lower }}{% endif %}{% if decision.size and decision.size != "None" %}, {{ decision.size | lower }} position{% endif %}.</div>
+    <div class="chips">
+      <span>Quality {{ "%.1f"|format(v.quality) if v.quality is not none else "—" }} ({{ band(v.quality) }})</span>
+      {% if momentum.direction %}<span>Quality momentum: {{ momentum.direction | lower | replace("_", " ") }}</span>{% endif %}
+      {% if rank %}<span>#{{ rank.rank }} of {{ rank.of }} in {{ rank.sector }} ({{ rank.label }})</span>{% endif %}
+      {% if v.valuation_view %}<span>Valuation: {{ v.valuation_view | lower }}</span>{% endif %}
+      {% if v.trend %}<span>Business trend: {{ v.trend | lower | replace("_", " ") }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="scoregrid">
+    {% for s in scores %}<div><div class="k">{{ s.label }}</div><div class="v">{{ "%.1f"|format(s.value) if s.value is not none else "—" }}</div><div class="b">{{ s.band }}</div></div>{% endfor %}
+  </div>
+  <div class="contents">
+    <div class="eyebrow">Contents</div>
+    <table>
+      {% for c in contents %}<tr><td class="l">Part {{ c.part }} · {{ c.title }}{% if c.note %}<div class="muted" style="font-weight:400;font-size:0.76rem">{{ c.note }}</div>{% endif %}</td>
+      <td>{{ ("page " ~ c.page) if c.page else "not included" }}</td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="foot"><span>Scores as of {{ row.as_of }} · {{ "full analysis" if row.basis == "FULL" else "quick analysis, Screener first" }}</span><span>Equity Research</span></div>
+</div>
+
+<div class="part">
+  <div class="eyebrow">Part A</div>
+  <h1>The decision</h1>
+  <p>Quality, then fundamentals, momentum, relative strength, technicals and valuation, each answering its own question. They are never averaged: a strong chart cannot repair weak fundamentals, and a cheap price cannot repair a weak business.</p>
+</div>
+
+<section>
+  <div class="decision">
+    <div class="eyebrow">Classification and action</div>
+    <div class="cls">{{ decision.classification or "—" }} · {{ decision.action or "—" }}</div>
+    <div class="sub">{% if decision.matrix %}Decision matrix: {{ decision.matrix }}. {% endif %}{% if decision.size and decision.size != "None" %}Position size: {{ decision.size | lower }}.{% endif %}</div>
+  </div>
+  <h3>Why</h3>
+  <ul class="tight">{% for w in decision.why or [] %}<li>{{ w[0] | upper }}{{ w[1:] }}.</li>{% endfor %}
+  {% if decision.gates and decision.gates.red_flags %}<li class="bad">Red flags: {{ decision.gates.red_flags | join("; ") }}.</li>{% endif %}</ul>
+  {% if valuation.interpretation %}<div class="callout">Quality and price together: {{ valuation.interpretation }}.</div>{% endif %}
+  <h3>In plain words <span class="pill {{ 'ai' if explanation.author == 'gpt-oss' else 'model' }}">{{ "written by gpt-oss, checked against the decision" if explanation.author == "gpt-oss" else "from the rules" }}</span></h3>
+  <p style="color:var(--ink-2);max-width:none">{{ explanation.summary }}</p>
+  {% if explanation.major_risks %}<p style="color:var(--ink-2);max-width:none"><b>Major risks:</b> {{ explanation.major_risks | join("; ") }}.</p>{% endif %}
+  {% if explanation.what_would_change_it %}<p style="color:var(--ink-2);max-width:none"><b>What would change it:</b> {{ explanation.what_would_change_it }}</p>{% endif %}
+</section>
+
+<section>
+  <h2>Business interpretation</h2>
+  <div class="q">What is strong, weak, improving and deteriorating — read from the inputs below, nothing added.</div>
+  {% set i = decision.interpretation or {} %}
+  <dl class="kv">
+    <dt>Strong</dt><dd>{{ (i.strong or []) | join(", ") or "—" }}</dd>
+    <dt>Weak</dt><dd>{{ (i.weak or []) | join(", ") or "—" }}</dd>
+    <dt>Improving</dt><dd>{{ (i.improving or []) | join("; ") or "—" }}</dd>
+    <dt>Deteriorating</dt><dd>{{ (i.deteriorating or []) | join("; ") or "—" }}</dd>
+    <dt>Against the market</dt><dd>{{ i.performance or "—" }}</dd>
+  </dl>
+  {% if why_holding_up %}<div class="note" style="margin-top:4mm"><b>Holding up while its sector is weak</b> (sector down over {{ why_holding_up.sector_weak_over | join(" and ") }}). Why, from the business data: {{ why_holding_up.reasons | join("; ") }}.</div>{% endif %}
+</section>
+
+<section>
+  <h2>Relative comparison</h2>
+  <dl class="kv">
+    <dt>Sector rank (Quality)</dt><dd>{% if rank %}#{{ rank.rank }} of {{ rank.of }} in {{ rank.sector }} — {{ rank.label }}{% else %}—{% endif %}</dd>
+    <dt>Quality momentum</dt><dd>{% if momentum.direction %}{{ momentum.direction | lower | replace("_", " ") }}{% for h in ["6m", "12m"] %}{% if momentum[h] and momentum[h].quality is not none %}; {{ h }} ago {{ "%.1f"|format(momentum[h].quality) }} ({{ "%+.1f"|format(momentum[h].change) }} since, {{ momentum[h].method }}){% endif %}{% endfor %}{% else %}—{% endif %}</dd>
+    <dt>Best same-sector alternative</dt><dd>{% if alt %}{{ alt.symbol }} — {{ alt.classification }}, {{ alt.action | lower }}, Quality {{ "%.1f"|format(alt.quality) if alt.quality is not none else "—" }}{% else %}none passing the core gate{% endif %}</dd>
+    <dt>In your portfolio</dt><dd>{% if held %}held, ₹{{ "{:,.0f}".format(held) }}{% else %}not held{% endif %}</dd>
+  </dl>
+  {% if replacement %}
+  <h3>Replacement view: {{ replacement.candidate }} against {{ replacement.existing }}</h3>
+  <table><thead><tr><th class="l">Score</th><th>Difference (candidate − held)</th></tr></thead><tbody>
+  {% for k, d in replacement.differences.items() %}<tr><td>{{ k | replace("_", " ") | capitalize }}</td><td class="{{ 'good' if d and d > 0 else 'bad' if d and d < 0 else '' }}">{{ "%+.1f"|format(d) if d is not none else "—" }}</td></tr>{% endfor %}
+  </tbody></table>
+  <p class="srcline">Better on: {{ replacement.why_better | join(", ") }}. Valuation: {{ replacement.valuation.existing or "—" }} → {{ replacement.valuation.candidate or "—" }}.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>The six scores</h2>
+  <table><thead><tr><th class="l">Score</th><th>Value</th><th class="l">Band</th><th class="l">Question it answers</th></tr></thead><tbody>
+  {% for s in scores %}<tr><td>{{ s.label }}</td><td>{{ "%.1f"|format(s.value) if s.value is not none else "—" }}</td><td class="l">{{ s.band }}</td><td class="l" style="font-weight:400;color:var(--ink-3)">{{ s.question }}</td></tr>{% endfor %}
+  </tbody></table>
+  <p class="srcline">Quality: {{ quality.formula or "—" }}.{% if quality.capped %} {{ quality.capped }}.{% endif %} Bands: 65+ strong, 50–64 good, 40–49 borderline, under 40 weak.</p>
+</section>
+
+{% for p in parts %}
+<section>
+  <h2>{{ p.title }} · {{ "%.1f"|format(p.score) if p.score is not none else "—" }}</h2>
+  {% if p.reason and p.score is none %}<div class="q">{{ p.reason }}</div>{% endif %}
+  <table><thead><tr><th class="l">Input</th><th>Weight</th><th>Score</th><th class="l">Figures</th><th class="l">Source</th></tr></thead><tbody>
+  {% for r in p.rows %}<tr><td>{{ r.name }}</td><td>{{ ("%.0f%%"|format(r.weight * 100)) if r.weight is not none else "" }}</td><td>{{ "%.1f"|format(r.score) if r.score is not none else "—" }}</td>
+    <td class="facts">{% if r.note %}{{ r.note }}. {% endif %}{{ r.facts }}</td><td class="src">{{ r.source or "" }}</td></tr>{% endfor %}
+  </tbody></table>
+  {% if p.source %}<p class="srcline">Source: {{ p.source }}.</p>{% endif %}
+  {% if p.not_measured %}<p class="srcline">Not measured: {{ p.not_measured | join(", ") }}.</p>{% endif %}
+  {% if p.key == "fundamental" and double_in.growth_pct_per_year %}<p class="srcline">Growth a year: {% for k, x in double_in.growth_pct_per_year.items() %}{{ k | replace("_", " ") }} {{ "%.1f"|format(x) }}%{% if not loop.last %}, {% endif %}{% endfor %}. Revenue doubles in {{ double_in.revenue_doubles_in_years or "—" }} years, profit in {{ double_in.profit_doubles_in_years or "—" }}{% if double_in.low_base %} — {{ double_in.low_base_reason }}{% endif %}. Source: {{ double_in.source }}.</p>{% endif %}
+</section>
+{% endfor %}
+
+<section>
+  <h2>How to read this report</h2>
+  <p style="max-width:none">Part A applies the Stock Quality &amp; Portfolio Replacement framework. Every figure comes from Screener.in statements (Yahoo Finance where Screener has none), NSE's daily index and price files, and stored daily prices; every input above shows its source. Part B is the editorial report from the full analysis; Part C is the deep report with its own cited sources. The method behind each score is documented in "stock_quality_framework_implementation.md".</p>
+</section>
+</body></html>

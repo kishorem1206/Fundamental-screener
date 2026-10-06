@@ -163,6 +163,35 @@ def _growth_score(m: dict) -> float:
     return _clamp(blended)
 
 
+# Direction-aware profitability (2026-10-06, user's explicit decision after
+# Sigma Solve scored 97 on profitability with ROCE, ROE and EBITDA margin all
+# labelled "deteriorating"): the level sets the score, and the direction of
+# each return and margin then moves it — a falling ROCE or margin pulls it
+# down, a rising one lifts it a little. Points are weighted by the same
+# weights the metrics carry in the score, over the trend labels available;
+# with no labels the score is exactly what it was. The labels are the ones
+# shown beside each metric (engine.py::trend_direction — the latest year's
+# move; ROCE's from Screener's own series).
+_DIRECTION_POINTS = {
+    "STRONGLY_IMPROVING": 7.0, "IMPROVING": 4.0, "STABLE": 0.0, "VOLATILE": -3.0,
+    "DETERIORATING": -10.0, "STRONGLY_DETERIORATING": -18.0,
+}
+
+
+def profitability_direction(m: dict, weights: dict[str, float]) -> dict:
+    """{"adjustment": points, "signals": {metric: label}} for the metrics in `weights` that have a trend label."""
+    used = {k: (m.get(f"{k}_trend"), w) for k, w in weights.items() if m.get(f"{k}_trend") in _DIRECTION_POINTS}
+    total = sum(w for _, w in used.values())
+    if not total:
+        return {"adjustment": 0.0, "signals": {}}
+    adj = sum(_DIRECTION_POINTS[label] * w for label, w in used.values()) / total
+    return {"adjustment": round(adj, 1), "signals": {k: label for k, (label, _) in used.items()}}
+
+
+_PROFITABILITY_WEIGHTS = {"ebitda_margin": 0.3, "pat_margin": 0.2, "roe": 0.25, "roce": 0.25}
+_LENDER_PROFITABILITY_WEIGHTS = {"roe": 0.50, "roa": 0.40, "pat_margin": 0.10}
+
+
 def _profitability_score(m: dict) -> float:
     scores = []
     configs = [
@@ -179,7 +208,7 @@ def _profitability_score(m: dict) -> float:
     if not scores:
         return 50.0
     total_w = sum(w for _, w in scores)
-    return _clamp(sum(s * w for s, w in scores) / total_w)
+    return _clamp(sum(s * w for s, w in scores) / total_w + profitability_direction(m, _PROFITABILITY_WEIGHTS)["adjustment"])
 
 
 def _cashflow_score(m: dict) -> float:
@@ -559,7 +588,7 @@ def _bank_profitability_score(m: dict) -> float:
     pm = m.get("pat_margin")
     if pm is not None:
         pairs.append((_score_metric(pm, BANK_PROFITABILITY_CONFIG["pat_margin"]), 0.10))
-    return _weighted_avg(pairs)
+    return _clamp(_weighted_avg(pairs) + (profitability_direction(m, _LENDER_PROFITABILITY_WEIGHTS)["adjustment"] if pairs else 0.0))
 
 
 def _bank_balance_sheet_score(m: dict) -> float:
@@ -636,7 +665,7 @@ def _nbfc_profitability_score(m: dict) -> float:
     pm = m.get("pat_margin")
     if pm is not None:
         pairs.append((_score_metric(pm, NBFC_PROFITABILITY_CONFIG["pat_margin"]), 0.10))
-    return _weighted_avg(pairs)
+    return _clamp(_weighted_avg(pairs) + (profitability_direction(m, _LENDER_PROFITABILITY_WEIGHTS)["adjustment"] if pairs else 0.0))
 
 
 def _nbfc_balance_sheet_score(m: dict) -> float:
@@ -853,6 +882,9 @@ def compute_scores(metrics: dict, sector: str = "") -> dict:
             metrics.get("pb_ratio"),
         ),
         "sector_matched": False,  # Will be updated by orchestrator
+        # how the direction of returns and margins moved the profitability score (points, and the labels behind it)
+        "profitability_direction": profitability_direction(
+            metrics, _LENDER_PROFITABILITY_WEIGHTS if (is_bank or is_nbfc or is_insurance) else _PROFITABILITY_WEIGHTS),
         "red_flags": red_flags,
         "weights": weights,
     }

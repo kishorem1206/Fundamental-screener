@@ -6,6 +6,7 @@ import QuickScreener from "./components/QuickScreener";
 import ExploreView from "./components/ExploreView";
 import AssumptionCenter from "./components/AssumptionCenter";
 import CombinedScore from "./components/CombinedScore";
+import Portfolio from "./components/Portfolio";
 import TechnicalScreener from "./technical/TechnicalScreener";
 import AnalysisProgress from "./components/AnalysisProgress";
 import AnalysisDashboard from "./components/AnalysisDashboard";
@@ -123,6 +124,7 @@ export default function App() {
         )}
         {phase === "explore" && section === "assumptions" && <AssumptionCenter />}
         {phase === "explore" && section === "combined" && <CombinedScore onAnalyse={startFullAnalysis} />}
+        {phase === "explore" && section === "portfolio" && <Portfolio />}
         {phase === "explore" && section === "explore" && (
           <ExploreView
             onAnalysisStarted={handleAnalysisStarted}

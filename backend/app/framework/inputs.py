@@ -28,10 +28,21 @@ def _years(series: dict | None) -> list[str]:
     return sorted(k for k, v in (series or {}).items() if v is not None)
 
 
-def share_dilution(financial_data: dict) -> dict:
+def _nse_actions(db, company_id):
+    if db is None or company_id is None:
+        return []
+    from app.nse_mcp import corporate_actions
+    return corporate_actions.for_stock(db, company_id)
+
+
+def share_dilution(financial_data: dict, db: Session | None = None, company_id: str | None = None) -> dict:
     """Yearly growth in the share count, derived as net profit / basic EPS for
-    each reported year. A jump that came with no matching rise in equity is a
-    split or bonus issue, not dilution, and that year is left out."""
+    each reported year. A jump in a year NSE lists a split or bonus for is that
+    event, not dilution, and the year is left out; where NSE's list has not
+    been read, a jump with no matching rise in equity is treated the same way."""
+    from app.nse_mcp.corporate_actions import split_or_bonus_financial_years
+
+    official = split_or_bonus_financial_years(_nse_actions(db, company_id))
     income, balance = financial_data.get("income") or {}, financial_data.get("balance") or {}
     profit, eps, equity = income.get("net_income") or {}, income.get("basic_eps") or {}, balance.get("total_equity") or {}
     shares = {}
@@ -41,9 +52,13 @@ def share_dilution(financial_data: dict) -> dict:
     years = sorted(shares)
     if len(years) < 2:
         return {"score": None, "reason": "fewer than two years of profit and EPS"}
-    steps, skipped = [], []
+    steps, skipped, why = [], [], {}
     for prev, cur in zip(years, years[1:]):
         change = shares[cur] / shares[prev] - 1
+        if abs(change) > 0.25 and cur in official:
+            skipped.append(cur)
+            why[cur] = f"NSE: {official[cur]}"
+            continue
         if abs(change) > 0.25 and equity.get(prev) and equity.get(cur):
             raised = (equity[cur] - equity[prev] - profit[cur]) / equity[prev]
             if raised < 0.10 and change > 0 or change < 0:
@@ -51,24 +66,45 @@ def share_dilution(financial_data: dict) -> dict:
                 continue
         steps.append(change)
     if not steps:
-        return {"score": None, "reason": "only split or bonus years on record", "split_or_bonus_years": skipped}
+        return {"score": None, "reason": "only split or bonus years on record", "split_or_bonus_years": skipped,
+                **({"confirmed_by": why} if why else {})}
     yearly = (math.prod(1 + s for s in steps) ** (1 / len(steps)) - 1) * 100
     return {
         "score": round(_score_metric(yearly, _DILUTION), 1), "share_count_growth_pct_per_year": round(yearly, 2),
         "years": [years[0], years[-1]], "split_or_bonus_years": skipped,
-        "basis": "derived: net profit / basic EPS (Yahoo annual statements)",
+        **({"confirmed_by": why} if why else {}),
+        "basis": "derived: net profit / basic EPS (Yahoo annual statements); splits and bonuses from NSE corporate actions",
     }
 
 
-def dividend_sustainability(financial_data: dict, metrics: dict, lender: bool = False) -> dict:
+def dividend_sustainability(financial_data: dict, metrics: dict, lender: bool = False,
+                            db: Session | None = None, company_id: str | None = None) -> dict:
     """Payout against profit and, outside lenders, against free cash flow. A
-    company that pays no dividend is not scored on this."""
+    company that pays no dividend is not scored on this.
+
+    The dividend is NSE's: what the company actually paid over the last twelve
+    months, restated to today's share count. Yahoo's stated rate is used only
+    when NSE's corporate actions have not been read for the stock."""
+    from app.nse_mcp.corporate_actions import dividends_last_12_months
+
     market = financial_data.get("market") or {}
     rate, shares, payout = market.get("dividend_rate"), market.get("shares_outstanding"), market.get("payout_ratio")
+    actions = _nse_actions(db, company_id)
+    nse = dividends_last_12_months(actions) if actions else None
+    source = "Yahoo: dividend rate, payout ratio"
+    extra: dict = {}
+    if actions:
+        if nse is None:
+            return {"score": None, "reason": "no dividend in the last twelve months (NSE corporate actions)"}
+        rate, source = nse["per_share"], "NSE corporate actions (dividends with ex-dates in the last twelve months)"
+        extra = {"payments": [f"{p['ex_date']}: ₹{p.get('restated_per_share', p['per_share'])}" for p in nse["payments"]]}
+        eps = market.get("trailing_eps")
+        if eps and eps > 0:
+            payout = rate / eps
     if not rate or not shares:
         return {"score": None, "reason": "no dividend on record"}
     paid = rate * shares
-    parts, out = [], {"dividend_per_share": rate, "dividends_paid": paid}
+    parts, out = [], {"dividend_per_share": rate, "dividends_paid": paid, **extra}
     if payout is not None:
         out["payout_pct"] = round(payout * 100, 1)
         parts.append(_score_metric(payout * 100, _PAYOUT))
@@ -78,7 +114,7 @@ def dividend_sustainability(financial_data: dict, metrics: dict, lender: bool = 
         parts.append(_score_metric(fcf / paid, _FCF_COVER))
     if not parts:
         return {"score": None, "reason": "no payout ratio or free cash flow to judge it against", **out}
-    return {"score": round(sum(parts) / len(parts), 1), **out, "basis": "Yahoo: dividend rate, payout ratio; free cash flow from annual cash flow"}
+    return {"score": round(sum(parts) / len(parts), 1), **out, "basis": f"{source}; free cash flow from annual cash flow"}
 
 
 def _stored_quarterly_profit(db: Session, company_id: str) -> tuple[dict[str, float], str | None]:

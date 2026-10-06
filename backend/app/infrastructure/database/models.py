@@ -1647,6 +1647,10 @@ class FrameworkScore(Base):
     valuation: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
     valuation_view: Mapped[str | None] = mapped_column(String, nullable=True)
     trend: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Quality Momentum (section 10): change against 6 and 12 months ago, and its direction
+    quality_change_6m: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    quality_change_12m: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    quality_direction: Mapped[str | None] = mapped_column(String, nullable=True)
     classification: Mapped[str | None] = mapped_column(String, nullable=True)
     action: Mapped[str | None] = mapped_column(String, nullable=True)
     sector_framework: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1661,3 +1665,63 @@ class FrameworkScore(Base):
         Index("fw_scores_fundamental_idx", "fundamental"),
         Index("fw_scores_quality_idx", "quality"),
     )
+
+
+# ── Portfolio (framework sections 12-14) ─────────────────────────────────────
+
+class PortfolioHolding(Base):
+    """One holding as last read from its source. A sync from Kite (or a CSV
+    upload) replaces that source's rows; MANUAL rows are only changed by hand.
+    `asset_class` is EQUITY, EQUITY_FUND, DEBT, GOLD, CASH, INTERNATIONAL or OTHER."""
+
+    __tablename__ = "pf_holdings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)          # KITE | KITE_MF | KITE_CASH | DHAN_CSV | CSV | MANUAL
+    stock_id: Mapped[str | None] = mapped_column(String, ForeignKey("stocks.id", ondelete="SET NULL"), nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String, nullable=True)
+    isin: Mapped[str | None] = mapped_column(String, nullable=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    asset_class: Mapped[str] = mapped_column(String, nullable=False)
+    class_basis: Mapped[str | None] = mapped_column(String, nullable=True)  # how asset_class was decided
+    quantity: Mapped[float | None] = mapped_column(Numeric(20, 4), nullable=True)
+    avg_price: Mapped[float | None] = mapped_column(Numeric(20, 4), nullable=True)
+    last_price: Mapped[float | None] = mapped_column(Numeric(20, 4), nullable=True)
+    value: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    __table_args__ = (Index("pf_holdings_source_idx", "source"),)
+
+
+class PortfolioSettings(Base):
+    """The user's own limits and targets (one row, id 'default'). Nothing is
+    judged against a target the user has not set."""
+
+    __tablename__ = "pf_settings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ── NSE MCP ──────────────────────────────────────────────────────────────────
+
+class NseCorporateAction(Base):
+    """A corporate action exactly as NSE lists it (app/nse_mcp/). Kept apart
+    from `corporate_actions` (Yahoo's list, which the older reports read with
+    Yahoo's conventions). `adjustment_factor` is NSE's: 0.5 for a 1:1 bonus,
+    0.2 for a 10-to-2 split, 1.0 for anything that does not change the share
+    count. `dividend_per_share` is read from NSE's own purpose text."""
+
+    __tablename__ = "nse_corporate_actions"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False)
+    ex_date: Mapped[date] = mapped_column(Date, nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    action_type: Mapped[str] = mapped_column(String, nullable=False)   # SPLIT | BONUS | DIVIDEND | OTHER
+    adjustment_factor: Mapped[float] = mapped_column(Numeric(14, 8), nullable=False, default=1.0)
+    dividend_per_share: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (PrimaryKeyConstraint("stock_id", "ex_date", "purpose"),)

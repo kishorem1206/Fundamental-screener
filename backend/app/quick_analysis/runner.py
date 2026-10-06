@@ -162,6 +162,15 @@ def run(stocks: list[Stock], workers: int = 4, stocks_per_sec: float = 1.5,
                     session.close()
             if i % 25 == 0:
                 print(f"  ...{i}/{len(stocks)} processed, {stored} stored, {write_failures} write failures", flush=True)
+    if store and len(stocks) > 50:
+        # Re-decide every stock once all are scored, so sector ranks (and the
+        # gates that use them) compare each stock with its whole sector.
+        from app.framework.decisions import refresh_all
+        session = get_db()
+        try:
+            print("  framework decisions:", refresh_all(session), flush=True)
+        finally:
+            session.close()
     return out
 
 

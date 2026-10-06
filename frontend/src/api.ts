@@ -126,6 +126,22 @@ export const api = {
     req<import("./types").CompanyScoresResponse>(`/company-scores?${new URLSearchParams(params).toString()}`),
   getFrameworkStock: (symbol: string) =>
     req<import("./components/CombinedScore").FrameworkStockDetail>(`/framework/${encodeURIComponent(symbol)}`),
+  getPortfolio: () => req<import("./components/Portfolio").PortfolioResponse>(`/portfolio`),
+  kiteStatus: () => req<{ connected: boolean; user: { user_name?: string } | null }>(`/portfolio/kite/status`),
+  kiteLogin: () => req<{ login_url: string }>(`/portfolio/kite/login`, { method: "POST" }),
+  kiteSync: () => req<{ rows: number; unmatched: string[] }>(`/portfolio/kite/sync`, { method: "POST" }),
+  importCsv: (csv: string, source: string) =>
+    req<{ rows: number; skipped: number; matched_stocks: number }>(`/portfolio/import/csv?source=${encodeURIComponent(source)}`,
+      { method: "POST", body: csv, headers: { "Content-Type": "text/csv" } }),
+  addManualHolding: (body: { name: string; asset_class: string; value: number }) =>
+    req<{ id: string }>(`/portfolio/manual`, { method: "POST", body: JSON.stringify(body) }),
+  deleteHolding: (id: string) => req<{ deleted: number }>(`/portfolio/holdings/${id}`, { method: "DELETE" }),
+  savePortfolioSettings: (settings: object) => req<object>(`/portfolio/settings`, { method: "PUT", body: JSON.stringify(settings) }),
+  nseQuote: (symbol: string) =>
+    req<{ last_price: number | null; change_pct: number | null; as_of: string | null; previous_close: number | null }>(`/nse/quote/${encodeURIComponent(symbol)}`),
+  repricePortfolio: () => req<{ updated: number; of: number; price_date: string | null }>(`/portfolio/reprice`, { method: "POST" }),
+  explainFramework: (symbol: string) =>
+    req<{ summary: string; major_risks?: string[]; what_would_change_it?: string | null; author: string }>(`/framework/${encodeURIComponent(symbol)}/explain`, { method: "POST" }),
   getFrameworkScores: (params: Record<string, string>) =>
     req<import("./components/CombinedScore").FrameworkScoresResponse>(`/framework/scores?${new URLSearchParams(params).toString()}`),
   getQuickScores: (params: Record<string, string>) =>

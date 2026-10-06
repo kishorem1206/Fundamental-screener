@@ -19,6 +19,7 @@ export interface FrameworkScoreRow {
   latest_fy: string | null;
   trend: string | null;
   classification: string | null;
+  action: string | null;
   quality: number | null;
   business_quality: number | null;
   fundamental: number | null;
@@ -26,16 +27,45 @@ export interface FrameworkScoreRow {
   relative_strength: number | null;
   technical: number | null;
   valuation: number | null;
+  valuation_view: string | null;
+  quality_change_6m: number | null;
+  quality_change_12m: number | null;
+  quality_direction: string | null;
+  sector_rank?: { rank: number; of: number; top_pct: number; label: string; sector: string } | null;
 }
 
 type Part = { score: number | null; weight?: number; reason?: string; note?: string; source?: string; basis?: string; [k: string]: unknown };
 
+type Alt = { symbol: string; company_name: string; classification: string; action: string; quality: number | null;
+  fundamental: number | null; relative_strength: number | null; technical: number | null; valuation: number | null; valuation_view: string | null };
+
+const CLASS_COLOR: Record<string, string> = {
+  "Core Quality": "#4fb3a0", "Investable": "#7fb8ff", "Improving / Watch": "#e8c766", "Recovery Candidate": "#e8c766",
+  "Tactical Only": "#e0793c", "Replacement Candidate": "#d9694f", "Avoid": "#d9694f",
+};
+
 export interface FrameworkStockDetail extends FrameworkScoreRow {
+  best_alternative?: Alt | null;
+  replacement?: { existing: string; candidate: string; differences: Record<string, number | null>; why_better: string[];
+    valuation: { existing: string | null; candidate: string | null };
+    risk: { existing: Record<string, number | null>; candidate: Record<string, number | null> } } | null;
   detail: {
     quality?: { score: number | null; band: string | null; formula?: string; capped?: string; governance_red_flag?: string };
     business_quality?: { score: number | null; coverage: number; components: Record<string, Part>; not_measured: string[]; source: string | null; years_on_record: number };
     fundamental?: { score: number | null; coverage: number; components: Record<string, Part>; double_in: Record<string, unknown>; long_run_growth: Part | null };
     trend?: { trend: string; reason?: string; signals: { signal: string; reading: string; vote: number }[] };
+    decision?: { classification: string | null; action: string | null; size: string | null; matrix: string | null; why: string[];
+      gates: { core: boolean; preferred: boolean; recovery: boolean; tactical: boolean; red_flags: string[] };
+      interpretation: { strong: string[]; weak: string[]; improving: string[]; deteriorating: string[]; performance: string | null; why: string[] | null } };
+    momentum?: { direction: string; current?: number;
+      "6m"?: { quality: number | null; change: number | null; method: string; as_of?: string; reason?: string };
+      "12m"?: { quality: number | null; change: number | null; method: string; as_of?: string; reason?: string } };
+    technical?: { score: number | null; reason?: string; components: Record<string, Part>; as_of?: string };
+    valuation?: { score: number | null; view: string | null; reason?: string; interpretation?: string; components: Record<string, Part>;
+      pe: number | null; market_cap_cr: number; market_cap_source: string; ttm_profit_cr: number | null; ttm_note?: string | null; as_of?: string };
+    quantitative?: { score: number | null; coverage: number; components: Record<string, Part>; not_measured: string[]; as_of: string | null };
+    relative_strength?: { score: number | null; reason?: string; components: Record<string, Part>; as_of?: string;
+      why_holding_up?: { sector_weak_over: string[]; stock_ahead_of_sector_over: string[]; reasons: string[] } };
   };
 }
 
@@ -48,10 +78,10 @@ export interface FrameworkScoresResponse {
 const SCORES: { key: ScoreKey; label: string; question: string; pending?: string }[] = [
   { key: "quality", label: "Quality", question: "Is this a good business? 70% Fundamental + 30% Business Quality. 50 is the gate, 65+ preferred." },
   { key: "fundamental", label: "Fundamental", question: "Are the financial numbers strong?" },
-  { key: "quantitative", label: "Quantitative", question: "Are the numbers getting better or worse?", pending: "phase 6" },
-  { key: "relative_strength", label: "Rel. strength", question: "Is it beating the market and its sector?", pending: "phase 6" },
-  { key: "technical", label: "Technical", question: "Is price behaviour confirming it?", pending: "phase 7" },
-  { key: "valuation", label: "Valuation", question: "Is the price reasonable?", pending: "phase 7" },
+  { key: "quantitative", label: "Quantitative", question: "Are the measurable numbers getting better or worse? Changes in growth, margins, returns and debt, plus price volatility and drawdown." },
+  { key: "relative_strength", label: "Rel. strength", question: "Is it beating the Nifty 50, its sector and same-sector stocks, and holding up when the market falls?" },
+  { key: "technical", label: "Technical", question: "Is price behaviour confirming strength or reversal? Trend structure, moving averages, RSI, MACD, volume, breakout, base, divergence." },
+  { key: "valuation", label: "Valuation", question: "Is the price reasonable? Higher is cheaper: P/E against its own history and its industry, PEG, EV/EBITDA, free-cash-flow yield, deep-report value." },
 ];
 
 const TRENDS: Record<string, { label: string; color: string }> = {
@@ -78,26 +108,30 @@ export default function CombinedScore({ onAnalyse }: Props) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState("");
   const [trend, setTrend] = useState("");
-  const [sort, setSort] = useState<ScoreKey | "market_cap">("quality");
+  const [sort, setSort] = useState<ScoreKey | "market_cap" | "quality_change_12m">("quality");
+  const [direction, setDirection] = useState("");
+  const [cls, setCls] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
 
-  useEffect(() => { setPage(0); }, [q, sector, trend, sort, order]);
+  useEffect(() => { setPage(0); }, [q, sector, trend, direction, cls, sort, order]);
 
   useEffect(() => {
     const params: Record<string, string> = { sort, order, limit: String(PAGE), offset: String(page * PAGE) };
     if (q.trim()) params.q = q.trim();
     if (sector) params.sector = sector;
     if (trend) params.trend = trend;
+    if (direction) params.direction = direction;
+    if (cls) params.classification = cls;
     const t = setTimeout(() => {
       api.getFrameworkScores(params).then((r) => { setData(r); setError(""); })
         .catch((e: unknown) => setError(e instanceof Error ? e.message : "Could not load scores"));
     }, 200);
     return () => clearTimeout(t);
-  }, [q, sector, trend, sort, order, page]);
+  }, [q, sector, trend, direction, cls, sort, order, page]);
 
-  const sortBy = (key: ScoreKey | "market_cap") => {
+  const sortBy = (key: ScoreKey | "market_cap" | "quality_change_12m") => {
     if (sort === key) setOrder(order === "desc" ? "asc" : "desc");
     else { setSort(key); setOrder("desc"); }
   };
@@ -131,6 +165,16 @@ export default function CombinedScore({ onAnalyse }: Props) {
             <option value="">Any trend</option>
             {Object.entries(TRENDS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
+          <select value={cls} onChange={(e) => setCls(e.target.value)} className="rounded-lg px-3 py-2 text-sm" style={inputStyle}>
+            <option value="">Any classification</option>
+            {Object.keys(CLASS_COLOR).map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={direction} onChange={(e) => setDirection(e.target.value)} className="rounded-lg px-3 py-2 text-sm" style={inputStyle}>
+            <option value="">Any quality momentum</option>
+            <option value="IMPROVING">Quality improving</option>
+            <option value="STABLE">Quality stable</option>
+            <option value="DECLINING">Quality declining</option>
+          </select>
           <span className="text-xs ml-auto" style={{ color: "var(--text-dim)" }}>
             {data ? `${data.total.toLocaleString("en-IN")} stocks` : "Loading…"}
           </span>
@@ -143,6 +187,7 @@ export default function CombinedScore({ onAnalyse }: Props) {
             <thead>
               <tr style={{ color: "var(--text-dim)", borderBottom: "1px solid var(--border-subtle)" }}>
                 <th className="text-left py-2 px-2 text-xs font-medium">Stock</th>
+                <th className="text-left py-2 px-2 text-xs font-medium" title="Classification and action from the framework's gates and decision matrix">Decision</th>
                 {SCORES.map((s) => (
                   <th key={s.key} className="text-right py-2 px-2 text-xs font-medium" title={s.question}>
                     {s.pending ? (
@@ -155,6 +200,13 @@ export default function CombinedScore({ onAnalyse }: Props) {
                     )}
                   </th>
                 ))}
+                <th className="text-right py-2 px-2 text-xs font-medium" title="Quality now against 12 months ago (6 months in brackets)">
+                  <button onClick={() => sortBy("quality_change_12m")} className="inline-flex items-center gap-1"
+                          style={{ color: sort === "quality_change_12m" ? "var(--accent-gold-bright)" : "inherit" }}>
+                    Quality momentum{sort === "quality_change_12m" && <Arrow className="h-3 w-3" />}
+                  </button>
+                </th>
+                <th className="text-left py-2 px-2 text-xs font-medium" title="Rank of Quality within the stock's sector">Sector rank</th>
                 <th className="text-left py-2 px-2 text-xs font-medium">Business trend</th>
                 <th className="text-right py-2 px-2 text-xs font-medium">
                   <button onClick={() => sortBy("market_cap")} className="inline-flex items-center gap-1"
@@ -184,16 +236,31 @@ export default function CombinedScore({ onAnalyse }: Props) {
                         </span>
                       </button>
                     </td>
+                    <td className="py-2 px-2 text-xs">
+                      <div style={{ color: r.classification ? CLASS_COLOR[r.classification] : "var(--text-dim)" }}>{r.classification ?? "—"}</div>
+                      <div style={{ color: "var(--text-dim)" }}>{r.action ?? ""}</div>
+                    </td>
                     {SCORES.map((s) => (
                       <td key={s.key} className="py-2 px-2 text-right tabular-nums font-semibold"
                           style={{ color: scoreColor(r[s.key]) }}>
                         {r[s.key] === null ? "—" : r[s.key]!.toFixed(1)}
+                        {s.key === "valuation" && r.valuation_view && (
+                          <div className="text-[10px] font-normal" style={{ color: "var(--text-dim)" }}>{r.valuation_view.toLowerCase()}</div>
+                        )}
                         {s.key === "quality" && r.business_quality !== null && (
                           <div className="text-[10px] font-normal" style={{ color: "var(--text-dim)" }}
                                title="Business Quality, 30% of Quality">business {r.business_quality.toFixed(0)}</div>
                         )}
                       </td>
                     ))}
+                    <td className="py-2 px-2 text-right text-xs tabular-nums"
+                        style={{ color: r.quality_direction === "IMPROVING" ? "#4fb3a0" : r.quality_direction === "DECLINING" ? "#d9694f" : "var(--text-secondary)" }}>
+                      {r.quality_change_12m === null ? "—" : `${r.quality_change_12m > 0 ? "+" : ""}${r.quality_change_12m.toFixed(1)}`}
+                      {r.quality_change_6m !== null && <span style={{ color: "var(--text-dim)" }}> ({r.quality_change_6m > 0 ? "+" : ""}{r.quality_change_6m.toFixed(1)})</span>}
+                    </td>
+                    <td className="py-2 px-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {r.sector_rank ? <>#{r.sector_rank.rank}/{r.sector_rank.of} <span style={{ color: "var(--text-dim)" }}>{r.sector_rank.label}</span></> : "—"}
+                    </td>
                     <td className="py-2 px-2 text-xs" style={{ color: t?.color ?? "var(--text-dim)" }}>{t?.label ?? "—"}</td>
                     <td className="py-2 px-2 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>
                       {r.market_cap === null ? "—" : Math.round(r.market_cap / 1e7).toLocaleString("en-IN")}
@@ -204,7 +271,7 @@ export default function CombinedScore({ onAnalyse }: Props) {
                     </td>
                   </tr>
                   {isOpen && (
-                    <tr><td colSpan={SCORES.length + 4} className="p-0"><StockDetail symbol={r.symbol} onAnalyse={() => onAnalyse?.(r.stock_id)} /></td></tr>
+                    <tr><td colSpan={SCORES.length + 7} className="p-0"><StockDetail symbol={r.symbol} onAnalyse={onAnalyse ? () => onAnalyse(r.stock_id) : undefined} /></td></tr>
                   )}
                   </Fragment>
                 );
@@ -233,14 +300,29 @@ const LABELS: Record<string, string> = {
   share_dilution: "Share dilution", dividend_sustainability: "Dividend sustainability",
   durability: "Durability of returns", margin_resilience: "Margin resilience", predictability: "Predictability",
   capital_allocation: "Capital allocation", promoter_behaviour: "Promoter behaviour", management_credibility: "Management credibility",
+  growth_acceleration: "Growth acceleration", margin_change: "Margin change", return_change: "Return change",
+  debt_change: "Debt change", volatility: "Volatility", drawdown: "Drawdown", risk_adjusted_return: "Risk-adjusted return",
+  vs_market: "vs Nifty 50", vs_sector: "vs sector", sector_percentile: "Sector percentile", resilience: "Resilience in market falls",
+  drawdown_vs_market: "Drawdown vs market", near_52_week_high: "Near 52-week high",
+  trend_structure: "Trend structure", moving_averages: "Moving averages", rsi: "RSI (14)", macd: "MACD", volume: "Volume confirmation",
+  breakout: "Breakout / breakdown", base: "Base / contraction", reversal: "Reversal structure",
+  pe_vs_history: "P/E vs own history", pe_vs_sector: "P/E vs industry", pb_vs_history: "P/B vs own history",
+  pb_vs_sector: "P/B vs industry", peg: "PEG", ev_ebitda: "EV/EBITDA", fcf_yield: "Free-cash-flow yield", deep_report: "Deep report value",
 };
-const HIDDEN = new Set(["score", "weight", "source", "governance_flags"]);
+
+function flat(v: unknown): string {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k} ${typeof x === "number" ? Number(x.toFixed(2)) : x}`).join(", ");
+  }
+  return Array.isArray(v) ? v.join(", ") : String(v);
+}
+const HIDDEN = new Set(["score", "weight", "source", "governance_flags", "note"]);
 
 function facts(part: Part): string {
   if (part.score === null && part.reason) return part.reason;
   return Object.entries(part)
-    .filter(([k, v]) => !HIDDEN.has(k) && v !== null && v !== undefined && typeof v !== "object")
-    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "number" ? Number(v.toFixed(2)) : v}`)
+    .filter(([k, v]) => !HIDDEN.has(k) && v !== null && v !== undefined)
+    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "number" ? Number(v.toFixed(2)) : flat(v)}`)
     .join(" · ");
 }
 
@@ -270,15 +352,22 @@ function PartsTable({ title, total, parts }: { title: string; total: number | nu
   );
 }
 
-function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse: () => void }) {
+export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?: () => void }) {
   const [d, setD] = useState<FrameworkStockDetail | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     api.getFrameworkStock(symbol).then(setD).catch((e: unknown) => setErr(e instanceof Error ? e.message : "Could not load"));
   }, [symbol]);
+  const [why, setWhy] = useState<{ summary: string; major_risks?: string[]; what_would_change_it?: string | null; author: string } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [live, setLive] = useState<{ last_price: number | null; change_pct: number | null; as_of: string | null } | null>(null);
+  useEffect(() => { api.nseQuote(symbol).then(setLive).catch(() => setLive(null)); }, [symbol]);
   if (err) return <div className="p-4 text-xs" style={{ color: "var(--accent-red)" }}>{err}</div>;
   if (!d) return <div className="p-4 text-xs" style={{ color: "var(--text-dim)" }}>Loading…</div>;
-  const { quality, business_quality: bq, fundamental: f, trend } = d.detail;
+  const { quality, business_quality: bq, fundamental: f, trend, quantitative: qn, relative_strength: rs, technical: tc, valuation: vl, momentum: mo, decision: dc } = d.detail;
+  const horizon = (h?: { quality: number | null; change: number | null; method: string; as_of?: string; reason?: string }, label = "") =>
+    !h ? null : h.quality === null ? `${label}: ${h.reason ?? "not available"}` :
+      `${label} ${h.quality.toFixed(1)} (${h.change! > 0 ? "+" : ""}${h.change!.toFixed(1)} since, ${h.method}${h.as_of ? ` at ${h.as_of}` : ""})`;
   return (
     <div className="p-4 space-y-4" style={{ background: "var(--glass)" }}>
       <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
@@ -286,12 +375,86 @@ function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse: () => v
         {quality?.band ? ` (${quality.band.toLowerCase().replace("_", " ")})` : ""} = {quality?.formula ?? "—"}.
         {quality?.capped && <span style={{ color: "var(--accent-red)" }}> {quality.capped}.</span>}
         {trend && <> Business trend: <b>{trend.trend.toLowerCase().replace("_", " ")}</b>{trend.reason ? ` — ${trend.reason}` : ""}.</>}
-        <button onClick={onAnalyse} className="ml-3 underline" style={{ color: "var(--accent-gold-bright)" }}>Run full analysis</button>
+        {live?.last_price != null && (
+          <span className="ml-1" title={`NSE live quote${live.as_of ? `, ${live.as_of}` : ""}`}> Price <b style={{ color: "var(--text-primary)" }}>₹{live.last_price.toLocaleString("en-IN")}</b>
+            {live.change_pct != null && <span style={{ color: live.change_pct >= 0 ? "#4fb3a0" : "#d9694f" }}> {live.change_pct >= 0 ? "+" : ""}{live.change_pct.toFixed(2)}%</span>}
+            <span style={{ color: "var(--text-dim)" }}> (NSE{live.as_of ? `, ${live.as_of.slice(11, 16)}` : ""})</span>.</span>
+        )}
+        {onAnalyse && <button onClick={onAnalyse} className="ml-3 underline" style={{ color: "var(--accent-gold-bright)" }}>Run full analysis</button>}
+        <a href={`/api/framework/${encodeURIComponent(symbol)}/integrated-report.pdf`} target="_blank" rel="noreferrer"
+           className="ml-3 underline" style={{ color: "var(--accent-gold-bright)" }}
+           title="One PDF: this framework section, the editorial report (if a full analysis exists) and the deep report (if built). Takes up to a minute.">
+          Integrated report (PDF)</a>
       </div>
+      {dc?.classification && (
+        <div className="rounded-lg p-3 text-xs space-y-1.5" style={{ border: `1px solid ${CLASS_COLOR[dc.classification]}`, color: "var(--text-secondary)" }}>
+          <div className="text-sm" style={{ color: "var(--text-primary)" }}>
+            <b style={{ color: CLASS_COLOR[dc.classification] }}>{dc.classification}</b> · {dc.action}
+            {dc.size && dc.size !== "None" && <> · position size: {dc.size.toLowerCase()}</>}
+            {dc.matrix && <span style={{ color: "var(--text-dim)" }}> — {dc.matrix}</span>}
+          </div>
+          <div>{dc.why.join(". ")}.</div>
+          {dc.gates.red_flags.length > 0 && <div style={{ color: "var(--accent-red)" }}>Red flags: {dc.gates.red_flags.join("; ")}</div>}
+          <div>
+            {dc.interpretation.strong.length > 0 && <>Strong: {dc.interpretation.strong.join(", ")}. </>}
+            {dc.interpretation.weak.length > 0 && <>Weak: {dc.interpretation.weak.join(", ")}. </>}
+            {dc.interpretation.improving.length > 0 && <>Improving: {dc.interpretation.improving.join(", ")}. </>}
+            {dc.interpretation.deteriorating.length > 0 && <>Deteriorating: {dc.interpretation.deteriorating.join(", ")}. </>}
+            {dc.interpretation.performance && <>The stock is {dc.interpretation.performance}. </>}
+          </div>
+          {d.best_alternative && (
+            <div>Best same-sector alternative now: <b style={{ color: "var(--text-primary)" }}>{d.best_alternative.symbol}</b> ({d.best_alternative.classification},{" "}
+              {d.best_alternative.action.toLowerCase()}, Quality {d.best_alternative.quality?.toFixed(1) ?? "—"}).</div>
+          )}
+          {d.replacement && (
+            <div>Replacement view: {d.replacement.candidate} is better on {d.replacement.why_better.join(", ")} (
+              {Object.entries(d.replacement.differences).filter(([, v]) => v !== null).map(([k, v]) => `${k.replace(/_/g, " ")} ${v! > 0 ? "+" : ""}${v}`).join(", ")};
+              valuation {d.replacement.valuation.existing?.toLowerCase() ?? "—"} → {d.replacement.valuation.candidate?.toLowerCase() ?? "—"}).</div>
+          )}
+          <div className="pt-1">
+            {why ? (
+              <div className="space-y-1">
+                <div style={{ color: "var(--text-primary)" }}>{why.summary}</div>
+                {why.major_risks && why.major_risks.length > 0 && <div>Major risks: {why.major_risks.join("; ")}.</div>}
+                {why.what_would_change_it && <div>What would change it: {why.what_would_change_it}</div>}
+                <div style={{ color: "var(--text-dim)" }}>Written by {why.author === "gpt-oss" ? "gpt-oss from the numbers above, checked against the decision" : "the rules (model unavailable or its answer disagreed with the decision)"}.</div>
+              </div>
+            ) : (
+              <button disabled={asking} onClick={() => { setAsking(true); api.explainFramework(d.symbol).then(setWhy).finally(() => setAsking(false)); }}
+                      className="underline" style={{ color: "var(--accent-gold-bright)" }}>{asking ? "Writing the explanation…" : "Explain this decision"}</button>
+            )}
+          </div>
+        </div>
+      )}
+      {(mo || d.sector_rank) && (
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {mo && <><b style={{ color: "var(--text-primary)" }}>Quality momentum: {mo.direction.toLowerCase().replace("_", " ")}</b>.{" "}
+            {[horizon(mo["6m"], "6 months ago"), horizon(mo["12m"], "12 months ago")].filter(Boolean).join("; ")}.{" "}</>}
+          {d.sector_rank && <>Quality ranks #{d.sector_rank.rank} of {d.sector_rank.of} in {d.sector_rank.sector} ({d.sector_rank.label}).</>}
+        </div>
+      )}
       <div className="grid gap-5 lg:grid-cols-2">
         {f && <PartsTable title="Fundamental" total={f.score} parts={f.components} />}
         {bq && <PartsTable title="Business quality" total={bq.score} parts={bq.components} />}
+        {qn && <PartsTable title="Quantitative" total={qn.score} parts={qn.components} />}
+        {rs && <PartsTable title={`Relative strength${rs.as_of ? ` (prices to ${rs.as_of})` : ""}`} total={rs.score} parts={rs.components} />}
+        {tc && <PartsTable title="Technical" total={tc.score} parts={tc.components} />}
+        {vl && <PartsTable title={`Valuation${vl.view ? ` — ${vl.view.toLowerCase()}` : ""}`} total={vl.score} parts={vl.components} />}
       </div>
+      {rs?.why_holding_up && (
+        <div className="text-xs rounded-lg p-3" style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
+          <b style={{ color: "var(--text-primary)" }}>Holding up while its sector is weak</b> (sector down over {rs.why_holding_up.sector_weak_over.join(" and ")},
+          stock 10%+ ahead over {rs.why_holding_up.stock_ahead_of_sector_over.join(" and ")}). Why, from the business data: {rs.why_holding_up.reasons.join("; ")}.
+        </div>
+      )}
+      {vl && (
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {vl.interpretation && <><b style={{ color: "var(--text-primary)" }}>Quality and price together:</b> {vl.interpretation}. </>}
+          {vl.market_cap_cr !== undefined && <>Market cap ₹{Math.round(vl.market_cap_cr).toLocaleString("en-IN")} cr ({vl.market_cap_source}),
+          trailing profit {vl.ttm_profit_cr === null ? "—" : `₹${Math.round(vl.ttm_profit_cr).toLocaleString("en-IN")} cr`}
+          {vl.pe ? `, P/E ${vl.pe}` : ""}. </>}{vl.ttm_note ?? ""}{vl.reason ?? ""}
+        </div>
+      )}
       <div className="text-[11px] space-y-1" style={{ color: "var(--text-dim)" }}>
         {f?.double_in && <div>Doubling: {facts(f.double_in as Part)} · rates {JSON.stringify((f.double_in as Record<string, unknown>).growth_pct_per_year)}</div>}
         {bq && <div>Business quality from {bq.source ?? "no Screener history"} ({bq.years_on_record} years). Not measured: {bq.not_measured.join(", ")}.</div>}

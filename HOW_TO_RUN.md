@@ -370,3 +370,52 @@ API: `/api/prices/status`, `/api/prices/check`, `/api/prices/indices`,
 Which index each stock is measured against: `backend/app/prices/benchmarks.py`.
 Index constituents (33 indices) are loaded by the technical screener's Nifty
 ingestion: `curl -X POST "http://localhost:3002/api/technical/admin/nifty/ingest?dry_run=false"`.
+
+
+---
+
+## Stock Quality framework, portfolio and integrated report
+
+**Pages:** Combined Score (six framework scores, decision, momentum, sector rank —
+open a row for every input and its source), Portfolio, and a "Stock Quality" tab
+inside every full analysis.
+
+**Scoring the whole universe** (Screener first, about two hours the first time
+because each company's Screener page is read once, 1.2 s apart; a company read
+within a week is not read again):
+
+```bash
+cd backend
+.venv/bin/python -m app.prices.runner                               # bring prices up to date first
+.venv/bin/python -m app.quick_analysis.runner --limit 3000 --force  # quick scores + framework scores + decisions
+.venv/bin/python -m scripts.backfill_framework_scores               # FULL rows from completed full analyses
+```
+
+The quick runner re-decides every stock at the end of the run so sector ranks
+compare whole sectors. A full analysis writes its own framework row when it finishes.
+
+**Portfolio:** Portfolio page → "Connect Kite" (log in on the page that opens) →
+"Sync from Kite". The Kite session lasts until the backend restarts. Dhan or any
+other broker: "Upload holdings CSV". Gold, debt, cash, international: "Add a
+holding by hand". Set limits and asset-allocation targets on the same page.
+
+**Integrated report:** "Integrated report (PDF)" on a full analysis, or in an
+opened Combined Score row, or
+`GET /api/framework/{SYMBOL}/integrated-report.pdf`. Part A is the framework
+section; Part B the editorial report (when a full analysis exists); Part C the
+deep report (when built). Takes up to a minute (the editorial PDF is generated
+the first time).
+
+**Explanation:** "Explain this decision" asks gpt-oss (Groq). If the model is
+unavailable or its answer disagrees with the decision, a rule-based explanation
+is shown instead.
+
+**NSE MCP servers** (official corporate actions, price history Yahoo lacks, live quotes, breadth):
+
+```bash
+cd backend
+.venv/bin/python -m app.nse_mcp.runner --actions       # corporate actions, every stock
+.venv/bin/python -m app.nse_mcp.runner --fill-prices   # history for stocks with none stored
+curl -s localhost:3002/api/nse/status                  # both servers and their tools
+curl -s localhost:3002/api/nse/quote/ITC               # live quote
+```

@@ -232,6 +232,17 @@ def compute_balance_sheet_intelligence(
         ebitda if pnl_statement_type == statement_type else None,
     )
     roce = roce_module.compute_roce(roce_total_assets, current_liabilities_value, ebit, revenue)
+    # The ROCE shown is Screener's own published figure for this period, when
+    # Screener has one (calculations/screener_roce.py — one ROCE on every
+    # page). This engine's own figure stays beside it as `roce_own_method`:
+    # the DuPont split below needs its capital-employed base.
+    try:
+        from app.calculations import screener_roce
+        _published = screener_roce.series(db, company_id)["values"].get(period)
+    except Exception:
+        _published = None
+    if _published is not None:
+        roce = {**roce, "roce_own_method": roce.get("roce"), "roce": _published, "roce_source": screener_roce.SOURCE_LABEL}
 
     financial_institution_summary = sector_routing.financial_institution_summary(p) if is_bank else None
 

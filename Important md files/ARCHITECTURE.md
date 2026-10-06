@@ -505,6 +505,37 @@ Deferred, not in this rollout: cash-flow-ratio overrides (`fcf_yield` etc. — n
 
 ---
 
+## Fundamental + technical merge and the Stock Quality framework (2026-10-05/06)
+
+Spec: `stock_quality_portfolio_replacement_agent_framework.md`. Formulas and
+sources for every score: `stock_quality_framework_implementation.md`.
+
+- **Technical screener merged in** (the separate Stock screener app):
+  `backend/app/technical/` (routes under `/api/technical`), `frontend/src/technical/`,
+  tests in `backend/tests/technical/`, docs in `Important md files/Technical screener/`
+  (path map: `MERGED_INTO_FUNDAMENTAL_SCREENER.md`). Shares this app's config,
+  logger and database; keeps its own Redis prefix (`screener:`).
+- **Pages:** Combined Score · Full Analysis · Quick Screener · Technical Screener · Portfolio · Assumptions.
+- **Price store** (`backend/app/prices/`): `price_bars_daily` (Yahoo, adjusted,
+  every active stock, 3 years) and `index_bars_daily` (NSE's daily index file,
+  every index, with P/E, P/B, yield); stored closes checked against NSE's bhavcopy.
+  Sector benchmark map in `prices/benchmarks.py`.
+- **Screener first in the quick scorer:** one plain-HTTP read of each company's two
+  Screener pages (`ingestion/screener_pages.py`) feeds every existing Screener ingest;
+  then the full analysis's `apply_screener_primary_overrides()`. Yahoo only fills gaps.
+- **Framework layer** (`backend/app/framework/`): Fundamental, Business Quality,
+  Quality (70/30), Quantitative, Relative Strength, Technical, Valuation, Trend,
+  Quality Momentum (point-in-time reconstruction until recorded history exists),
+  sector rank, decision engine, gpt-oss explanation checked against the decision.
+  Table `fw_scores`: one row per stock, per day, per basis (QUICK / FULL), kept for
+  history. Written by the quick runner and at the end of every full analysis.
+- **Portfolio** (`backend/app/portfolio/`): `pf_holdings`, `pf_settings`; Kite via the
+  backend's own read-only MCP session (`kite_link.py`, order tools refused in code),
+  CSV import, manual entries; sections 12-14 of the framework.
+- **Integrated report** (`backend/app/reporting/integrated/`): framework section +
+  editorial PDF + deep report PDF bound into one file.
+- Migrations 0037-0041.
+
 ## Environment Variables
 
 ```env

@@ -180,11 +180,17 @@ def _apply_balance_sheet_overrides(metrics: dict, sources: dict, db: Session, co
         return
 
     dm = bsi.get("derived_metrics") or {}
-    _set(metrics, sources, "roce", dm.get("roce"))
+    # ROCE is Screener's own published figure wherever Screener has one
+    # (calculations/screener_roce.py). Only a company Screener publishes no
+    # ROCE for (banks, other lenders) keeps a computed figure, labelled as such.
+    from app.calculations import screener_roce
     try:
-        _apply_roce_history(metrics, sources, db, company_id)
-    except Exception as e:  # best-effort; the yfinance series stays if Screener history is unavailable
-        logger.warning("ROCE history override skipped", company_id=company_id, error=str(e))
+        from_screener = screener_roce.apply_to_metrics(metrics, sources, db, company_id)
+    except Exception as e:
+        from_screener = False
+        logger.warning("Screener ROCE override skipped", company_id=company_id, error=str(e))
+    if not from_screener:
+        _set(metrics, sources, "roce", dm.get("roce"), source="COMPUTED (Screener has no ROCE for this company)")
     _set(metrics, sources, "debt_to_equity", dm.get("debt_to_equity"))
     _set(metrics, sources, "net_debt_to_ebitda", dm.get("net_debt_to_ebitda"))
 

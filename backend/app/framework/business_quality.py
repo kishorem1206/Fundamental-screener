@@ -134,21 +134,26 @@ def capital_allocation(series: dict, lender: bool) -> dict:
     return {"score": round(_score_metric(incremental, _INCREMENTAL), 1), "incremental_return_pct": round(incremental, 1), **out}
 
 
-def promoter_behaviour(db: Session, company_id: str) -> dict:
+def promoter_behaviour(db: Session, company_id: str, as_of=None) -> dict:
     from datetime import date
 
     from app.calculations.governance_scoring import compute_governance_penalty
     from app.infrastructure.database.models import ShareholdingScreener
 
-    rows = (db.query(ShareholdingScreener).filter(ShareholdingScreener.company_id == company_id,
-                                                  ShareholdingScreener.frequency == "quarterly",
-                                                  ShareholdingScreener.promoter_pct.isnot(None))
-            .order_by(ShareholdingScreener.period_end).all())
-    governance = compute_governance_penalty(db, company_id)
+    all_rows = (db.query(ShareholdingScreener).filter(ShareholdingScreener.company_id == company_id,
+                                                      ShareholdingScreener.frequency == "quarterly")
+                .order_by(ShareholdingScreener.period_end).all())
+    if as_of is not None:  # point in time: holdings published by then; no pledge history is kept to replay
+        all_rows = [r for r in all_rows if date.fromisoformat(r.period_end) <= as_of]
+    rows = [r for r in all_rows if r.promoter_pct is not None]
+    governance = compute_governance_penalty(db, company_id) if as_of is None else None
     out: dict = {"nse_pledge_data": governance is not None}
     if governance:
         out["governance_penalty"] = governance["penalty"]
         out["governance_flags"] = [{k: f[k] for k in ("event_type", "severity", "event_date")} for f in governance["flags"]]
+    if len(all_rows) >= 4 and not rows:
+        out.update(score=None, reason="no promoter group (widely held company)")
+        return out
     if len(rows) < 4:
         out.update(score=None, reason="fewer than four quarters of shareholding")
         return out
@@ -165,9 +170,11 @@ def promoter_behaviour(db: Session, company_id: str) -> dict:
     return out
 
 
-def management_credibility(db: Session, company_id: str) -> dict:
+def management_credibility(db: Session, company_id: str, as_of=None) -> dict:
     from app.infrastructure.database.models import ManagementCredibility
 
+    if as_of is not None:
+        return {"score": None, "reason": "guidance tracking keeps no history to replay at an earlier date"}
     rows = db.query(ManagementCredibility).filter(ManagementCredibility.company_id == company_id).all()
     kept = sum(r.upgraded_count + r.reiterated_count for r in rows)
     cut = sum(r.downgraded_count for r in rows)
@@ -178,14 +185,14 @@ def management_credibility(db: Session, company_id: str) -> dict:
             "guidance_kept_or_raised": kept, "guidance_cut": cut, "metrics_tracked": len(rows)}
 
 
-def compute_business_quality(db: Session, company_id: str, lender: bool, series: dict | None = None) -> dict:
-    series = series or annual(db, company_id)
+def compute_business_quality(db: Session, company_id: str, lender: bool, series: dict | None = None, as_of=None) -> dict:
+    series = series or annual(db, company_id, as_of)
     parts = {
         "durability": durability(series, lender),
         "predictability": predictability(series),
         "capital_allocation": capital_allocation(series, lender),
-        "promoter_behaviour": promoter_behaviour(db, company_id),
-        "management_credibility": management_credibility(db, company_id),
+        "promoter_behaviour": promoter_behaviour(db, company_id, as_of),
+        "management_credibility": management_credibility(db, company_id, as_of),
     }
     if not lender:
         parts["margin_resilience"] = margin_resilience(series)

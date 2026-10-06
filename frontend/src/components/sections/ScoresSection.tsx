@@ -189,6 +189,17 @@ export default function ScoresSection({ analysis }: { analysis: FullAnalysis }) 
         <div className="lg:col-span-3">
           <ChartCard eyebrow="Score Breakdown" title="Category scores (0–100)">
             <RadarScoreChart scores={s} />
+            {s?.profitability_direction && s.profitability_direction.adjustment !== 0 && (
+              <p className="text-xs mt-2" style={{ color: "var(--text-secondary)" }}>
+                Profitability includes{" "}
+                <b style={{ color: s.profitability_direction.adjustment < 0 ? "#d9694f" : "#4fb3a0" }}>
+                  {s.profitability_direction.adjustment > 0 ? "+" : ""}{s.profitability_direction.adjustment.toFixed(1)} points
+                </b>{" "}
+                for direction: {Object.entries(s.profitability_direction.signals)
+                  .map(([k, v]) => `${k.replace(/_/g, " ").replace("roce", "ROCE").replace("roe", "ROE").replace("roa", "ROA").replace("ebitda", "EBITDA").replace("pat", "PAT")} ${v.toLowerCase().replace(/_/g, " ")}`).join(", ")}.
+                The level sets the score; a falling return or margin pulls it down and a rising one lifts it.
+              </p>
+            )}
           </ChartCard>
         </div>
         <div className="lg:col-span-2">

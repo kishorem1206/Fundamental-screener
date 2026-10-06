@@ -24,11 +24,13 @@ import CashFlowIntelligenceSection from "./sections/CashFlowIntelligenceSection"
 import QuarterlySection from "./sections/QuarterlySection";
 import BankRoeSection from "./sections/BankRoeSection";
 import EditorialReport from "./EditorialReport";
+import { StockDetail as FrameworkDetail } from "./CombinedScore";
 
-type Tab = "overview" | "editorial" | "deep_report" | "summary" | "financials" | "quarterly" | "bank_roe" | "pl_intelligence" | "balance_sheet_intelligence" | "cash_flow_intelligence" | "scores" | "sector" | "peers" | "risks" | "news" | "calendar" | "concall" | "research" | "ai";
+type Tab = "overview" | "stock_quality" | "editorial" | "deep_report" | "summary" | "financials" | "quarterly" | "bank_roe" | "pl_intelligence" | "balance_sheet_intelligence" | "cash_flow_intelligence" | "scores" | "sector" | "peers" | "risks" | "news" | "calendar" | "concall" | "research" | "ai";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "stock_quality", label: "Stock Quality" },
   { key: "editorial", label: "Editorial Report" },
   { key: "deep_report", label: "Deep Report" },
   { key: "summary", label: "Summary" },
@@ -210,6 +212,14 @@ export default function AnalysisDashboard({ analysis }: Props) {
               {generatingPdf ? "Generating PDF…" : "Generate PDF Report"}
             </button>
           )}
+          {company?.symbol && (
+            <a href={`/api/framework/${encodeURIComponent(company.symbol)}/integrated-report.pdf`} target="_blank" rel="noreferrer"
+               title="One PDF: the Stock Quality framework, this editorial report and the deep report (when built)"
+               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium"
+               style={{ background: "rgba(79,179,160,0.15)", color: "#4fb3a0", border: "1px solid rgba(79,179,160,0.3)", textDecoration: "none" }}>
+              <FileText className="h-3.5 w-3.5" /> Integrated report (PDF)
+            </a>
+          )}
           <a href={api.getHtmlReportUrl(analysis.id)} download
              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium"
              style={{ background: "rgba(127,184,255,0.15)", color: "#7fb8ff",
@@ -249,6 +259,9 @@ export default function AnalysisDashboard({ analysis }: Props) {
         {tab === "summary" && <SummarySection analysis={analysis} />}
         {tab === "financials" && <FinancialsSection analysis={analysis} />}
         {tab === "deep_report" && <DeepReportSection analysis={analysis} />}
+        {tab === "stock_quality" && company?.symbol && (
+          <div className="card-rich overflow-hidden"><FrameworkDetail symbol={company.symbol} /></div>
+        )}
         {tab === "quarterly" && <QuarterlySection analysis={analysis} />}
         {tab === "bank_roe" && <BankRoeSection analysis={analysis} />}
         {tab === "pl_intelligence" && <PlIntelligenceSection analysis={analysis} />}
