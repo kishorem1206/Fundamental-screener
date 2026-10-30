@@ -729,3 +729,18 @@ The project lives in `~/Downloads`, which macOS protects: a plain `launchd` shel
 fails with "can't open input file". So each job runs through a small app in
 `~/Applications` (Screener Daily, Screener Weekly), which macOS asks once for access to
 Downloads. Rebuilding an app makes it ask again.
+
+
+## CANSLIM screen (2026-10-31)
+
+`backend/app/canslim/`, `frontend/src/components/CanslimPage.tsx`, table `canslim_scores`
+(migration 0048), route `/api/canslim/scores`. A separate read for every stock: it feeds
+no framework score, gate or classification. Built from stored data only; the letter
+rules are at the top of `canslim/score.py`.
+
+Thresholds come from the user's CANSLIM notes, tightened with InCred Money's India guide.
+Where they differ: L is computed as a real RS Rating ranked across every stock (the notes
+listed it as a gap); I treats FII + DII above 70% as crowded, and 10-20% as fair; S uses
+the 50-day average. CANSLIM averages the letters available and needs at least four.
+Combined is 60% CANSLIM + 40% peer quality, the stock's Quality percentile among its peers.
+The notes' reversal ranking was not built.

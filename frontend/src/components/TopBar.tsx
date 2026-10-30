@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase, Globe } from "lucide-react";
+import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase, Globe, TrendingUp } from "lucide-react";
 import type { Stock } from "../types";
 
-export type Section = "combined" | "explore" | "quick" | "technical" | "portfolio" | "macro" | "assumptions";
+export type Section = "combined" | "explore" | "quick" | "canslim" | "technical" | "portfolio" | "macro" | "assumptions";
 
 interface Props {
   allStocks: Stock[];
@@ -135,6 +135,7 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
           { key: "combined" as const, label: "Combined Score", Icon: Layers },
           { key: "explore" as const, label: "Full Analysis", Icon: LayoutGrid },
           { key: "quick" as const, label: "Quick Screener", Icon: Zap },
+          { key: "canslim" as const, label: "CANSLIM", Icon: TrendingUp },
           { key: "technical" as const, label: "Technical Screener", Icon: CandlestickChart },
           { key: "portfolio" as const, label: "Portfolio", Icon: Briefcase },
           { key: "macro" as const, label: "Market & Macro", Icon: Globe },

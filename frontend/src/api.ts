@@ -126,6 +126,8 @@ export const api = {
     req<import("./types").BankRoeAnalysis>(`/bank-roe/${companyId}`),
   getCompanyScores: (params: Record<string, string>) =>
     req<import("./types").CompanyScoresResponse>(`/company-scores?${new URLSearchParams(params).toString()}`),
+  canslimScores: (params: Record<string, string>) =>
+    req<import("./components/CanslimPage").CanslimResponse>(`/canslim/scores?${new URLSearchParams(params)}`),
   macroOverview: () => req<import("./components/MacroPage").MacroOverview>(`/macro/overview`),
   getCreditRatings: (companyId: string) =>
     req<import("./components/CombinedScore").CreditRatings>(`/governance/${companyId}/credit-ratings`),

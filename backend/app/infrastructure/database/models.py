@@ -1893,3 +1893,30 @@ class MarketNews(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     symbols: Mapped[list | None] = mapped_column(JSON, nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ── CANSLIM (app/canslim/) ───────────────────────────────────────────────────
+
+class CanslimScore(Base):
+    """A stock's latest CANSLIM read, one row a stock. Each letter is 0-100, or
+    null when its data is missing. Its own screen: nothing here feeds the
+    framework's scores or decisions. `detail` holds each letter's inputs."""
+
+    __tablename__ = "canslim_scores"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), primary_key=True)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    c: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    a: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    n: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    s: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    l: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    i: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    m: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    letters: Mapped[int] = mapped_column(Integer, nullable=False)
+    canslim: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True, index=True)
+    peer_quality: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    combined: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    basis: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

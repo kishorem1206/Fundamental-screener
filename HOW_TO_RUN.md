@@ -475,7 +475,7 @@ cd backend
 
 Two `launchd` jobs keep the data current (`backend/scripts/scheduled/`):
 
-- **Daily, 20:30:** prices, macro, FPI, news. Log: `backend/cache/scheduled_daily.log`
+- **Daily, 20:30:** prices, CANSLIM, macro, FPI, news. Log: `backend/cache/scheduled_daily.log`
 - **Weekly, Sunday 09:00:** SEBI orders, rating letters, decisions, estimates. Log: `backend/cache/scheduled_weekly.log`
 
 They start Docker if it is off. A Mac that is asleep runs the job when it wakes; one

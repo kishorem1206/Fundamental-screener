@@ -4,5 +4,6 @@
 JOB=daily
 source "$(dirname "$0")/_common.sh"
 $PY -m app.prices.runner
+$PY -m app.canslim.runner
 $PY -m app.macro.runner
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') $JOB done"
