@@ -18,7 +18,10 @@ from app.technical.shared.errors import AppError
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     register_technical_agents()
-    logger.info("Kishore Stock Screener API started", port=config.api_port, env=config.node_env)
+    from app.routes.fundamental import fail_interrupted
+
+    interrupted = fail_interrupted()
+    logger.info("Kishore Stock Screener API started", port=config.api_port, env=config.node_env, interrupted_analyses=interrupted)
     # The MCP session manager runs its own task group for the life of the
     # process — app.mount() does NOT auto-start a mounted sub-app's lifespan,
     # so without this every MCP request fails with "Task group is not

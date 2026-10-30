@@ -22,6 +22,20 @@ const QUICK_GROWTH_SPLIT: { key: DisplayKey; label: string }[] = [
   { key: "growth_quarterly", label: "Growth (Quarterly)" },
 ];
 
+const picksKey = (source: string) => `screener-picks-${source}`;
+function loadPicks(source: string): CompanyScoreRow[] {
+  try {
+    return JSON.parse(localStorage.getItem(picksKey(source)) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function savePicks(source: string, picks: CompanyScoreRow[]) {
+  try {
+    localStorage.setItem(picksKey(source), JSON.stringify(picks));
+  } catch { /* private window: picks last until the page closes */ }
+}
+
 type Range = [number, number];
 const FULL: Range = [0, 100];
 const emptyRanges = (scores: { key: DisplayKey }[]): Record<DisplayKey, Range> =>
@@ -99,6 +113,9 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
   const ipoSince = ipoSinceMonth && ipoSinceYear ? `${ipoSinceYear}-${ipoSinceMonth}-01` : "";
   const [rows, setRows] = useState<CompanyScoreRow[]>([]);
   const [total, setTotal] = useState(0);
+  // Stocks ticked along the way: they stay at the top whatever is searched or filtered next.
+  const [picked, setPicked] = useState<CompanyScoreRow[]>(() => loadPicks(source));
+  const [picksOnly, setPicksOnly] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -112,6 +129,8 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
   useEffect(() => {
     setRanges(emptyRanges(SCORES));
     setSortBy("overall");
+    setPicked(loadPicks(source));
+    setPicksOnly(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);
 
@@ -139,6 +158,66 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
     else { setSortBy(key); setOrder("desc"); }
   };
   const SortIcon = order === "desc" ? ArrowDown : ArrowUp;
+
+  const updatePicks = (next: CompanyScoreRow[]) => {
+    setPicked(next);
+    savePicks(source, next);
+    if (next.length === 0) setPicksOnly(false);
+  };
+  const togglePick = (r: CompanyScoreRow) =>
+    updatePicks(picked.some((p) => p.stock_id === r.stock_id) ? picked.filter((p) => p.stock_id !== r.stock_id) : [...picked, r]);
+  const clearPicks = () => updatePicks([]);
+
+  // Newest scores where the stock is in the current results; the table's sort applies to picks too
+  const latest = new Map(rows.map((r) => [r.stock_id, r]));
+  const pickedRows = picked.map((p) => latest.get(p.stock_id) ?? p).sort((a, b) => {
+    const x = a[sortBy as keyof CompanyScoreRow], y = b[sortBy as keyof CompanyScoreRow];
+    if (x === null || x === undefined) return 1;
+    if (y === null || y === undefined) return -1;
+    return (x < y ? -1 : x > y ? 1 : 0) * (order === "desc" ? -1 : 1);
+  });
+  const pickedIds = new Set(picked.map((p) => p.stock_id));
+  const otherRows = rows.filter((r) => !pickedIds.has(r.stock_id));
+  const columns = SCORES.length + (source === "quick" ? 4 : 3) + (ipoOnly ? 1 : 0);
+
+  const renderRow = (r: CompanyScoreRow, pinned: boolean) => (
+              <tr key={r.stock_id} className={source === "full" && r.analysis_id ? "cursor-pointer" : ""}
+                  onClick={() => source === "full" && r.analysis_id && onViewAnalysis?.(r.analysis_id)}
+                  style={{ borderTop: "1px solid var(--border-subtle)", background: pinned ? "rgba(201,162,39,0.07)" : undefined }}>
+                <td className="py-2 pr-2" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={pinned} onChange={() => togglePick(r)} aria-label={`Pick ${r.company_name}`}
+                         title={pinned ? "Remove from your picks" : "Keep at the top"} className="cursor-pointer" style={{ accentColor: "#c9a227" }} />
+                </td>
+                <td className="py-2 pr-3">
+                  <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{r.company_name}</div>
+                  <div className="text-[11px]" style={{ color: "var(--text-dim)" }}>{r.symbol}{r.sector ? ` · ${r.sector}` : ""}</div>
+                </td>
+                {ipoOnly && (
+                  <td className="text-right py-2 px-2 text-[11px] whitespace-nowrap" style={{ color: "var(--text-dim)" }}>
+                    {fmtDate(r.ipo_listing_date)}
+                  </td>
+                )}
+                {SCORES.map(({ key }) => (
+                  <td key={key} className="text-right py-2 px-2 tabular-nums font-semibold" style={{ color: scoreColor(r[key]) }}>
+                    {r[key] === null ? "—" : r[key]!.toFixed(0)}
+                  </td>
+                ))}
+                <td className="text-right py-2 pl-3 text-[11px] whitespace-nowrap" style={{ color: "var(--text-dim)" }}
+                    title={r.latest_quarter_end ? `Latest reported quarter at scoring: ${fmtDate(r.latest_quarter_end)}`
+                      : r.latest_fy ? `Yahoo data through ${r.latest_fy}` : undefined}>
+                  {fmtDate(r.scored_at)}
+                </td>
+                {source === "quick" && (
+                  <td className="text-right py-2 pl-3">
+                    <button className="text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap"
+                            onClick={() => onAnalyse?.(r.stock_id)}
+                            style={{ color: "var(--accent-gold-bright)", border: "1px solid rgba(201,162,39,0.35)" }}>
+                      Full analysis
+                    </button>
+                  </td>
+                )}
+              </tr>
+  );
 
   return (
     <div className="card-rich p-6">
@@ -229,6 +308,7 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
         <table className="w-full text-sm">
           <thead>
             <tr style={{ color: "var(--text-dim)" }} className="text-[11px] uppercase tracking-wide">
+              <th className="w-6" aria-label="Pick" />
               <th className="text-left py-2 pr-3 font-semibold">Company</th>
               {ipoOnly && (
                 <th className="text-right py-2 px-2 font-semibold cursor-pointer select-none whitespace-nowrap" onClick={() => clickSort("ipo_listing_date")}>
@@ -247,42 +327,25 @@ export default function ScoreScreener({ source, onViewAnalysis, onAnalyse }: Pro
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.stock_id} className={source === "full" && r.analysis_id ? "cursor-pointer" : ""}
-                  onClick={() => source === "full" && r.analysis_id && onViewAnalysis?.(r.analysis_id)}
-                  style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                <td className="py-2 pr-3">
-                  <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{r.company_name}</div>
-                  <div className="text-[11px]" style={{ color: "var(--text-dim)" }}>{r.symbol}{r.sector ? ` · ${r.sector}` : ""}</div>
+            {pickedRows.length > 0 && (
+              <tr>
+                <td colSpan={columns} className="pt-3 pb-1.5 text-[11px]" style={{ color: "var(--accent-gold-bright)" }}>
+                  <span className="font-semibold">Your picks ({pickedRows.length})</span>
+                  <label className="ml-4 cursor-pointer select-none" style={{ color: "var(--text-secondary)" }}>
+                    <input type="checkbox" checked={picksOnly} onChange={(e) => setPicksOnly(e.target.checked)} className="mr-1" style={{ accentColor: "#c9a227" }} />
+                    Only my picks
+                  </label>
+                  <button onClick={clearPicks} className="ml-4 underline" style={{ color: "var(--text-dim)" }}>Clear picks</button>
                 </td>
-                {ipoOnly && (
-                  <td className="text-right py-2 px-2 text-[11px] whitespace-nowrap" style={{ color: "var(--text-dim)" }}>
-                    {fmtDate(r.ipo_listing_date)}
-                  </td>
-                )}
-                {SCORES.map(({ key }) => (
-                  <td key={key} className="text-right py-2 px-2 tabular-nums font-semibold" style={{ color: scoreColor(r[key]) }}>
-                    {r[key] === null ? "—" : r[key]!.toFixed(0)}
-                  </td>
-                ))}
-                <td className="text-right py-2 pl-3 text-[11px] whitespace-nowrap" style={{ color: "var(--text-dim)" }}
-                    title={r.latest_quarter_end ? `Latest reported quarter at scoring: ${fmtDate(r.latest_quarter_end)}`
-                      : r.latest_fy ? `Yahoo data through ${r.latest_fy}` : undefined}>
-                  {fmtDate(r.scored_at)}
-                </td>
-                {source === "quick" && (
-                  <td className="text-right py-2 pl-3">
-                    <button className="text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap"
-                            onClick={() => onAnalyse?.(r.stock_id)}
-                            style={{ color: "var(--accent-gold-bright)", border: "1px solid rgba(201,162,39,0.35)" }}>
-                      Full analysis
-                    </button>
-                  </td>
-                )}
               </tr>
-            ))}
-            {rows.length === 0 && !error && (
-              <tr><td colSpan={SCORES.length + (source === "quick" ? 3 : 2) + (ipoOnly ? 1 : 0)} className="py-6 text-center text-sm" style={{ color: "var(--text-dim)" }}>
+            )}
+            {pickedRows.map((r) => renderRow(r, true))}
+            {!picksOnly && pickedRows.length > 0 && otherRows.length > 0 && (
+              <tr><td colSpan={columns} className="pt-3 pb-1.5 text-[11px] font-semibold" style={{ color: "var(--text-dim)" }}>All results</td></tr>
+            )}
+            {!picksOnly && otherRows.map((r) => renderRow(r, false))}
+            {rows.length === 0 && pickedRows.length === 0 && !error && (
+              <tr><td colSpan={columns} className="py-6 text-center text-sm" style={{ color: "var(--text-dim)" }}>
                 {source === "quick" ? "No scored companies match these filters yet." : "No analysed companies match these filters."}
               </td></tr>
             )}

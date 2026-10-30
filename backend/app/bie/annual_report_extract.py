@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.bie.evidence import clear_document_facts, quote_on_page, record_fact
 from app.infrastructure.database.models import Document
+from app.ingestion.pdfium_lock import PDFIUM_LOCK
 from app.logger import logger
 
 _AOC = re.compile(r"\bAOC\s*[-–—]?\s*[1I]\b", re.I)
@@ -38,15 +39,19 @@ _MAX_CLAIMS = 8
 
 
 def page_texts(pdf_bytes: bytes) -> list[str]:
-    pdf = pdfium.PdfDocument(pdf_bytes)
-    try:
-        texts = []
-        for i in range(len(pdf)):
-            textpage = pdf[i].get_textpage()
-            texts.append(textpage.get_text_range())
-        return texts
-    finally:
-        pdf.close()
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            texts = []
+            for i in range(len(pdf)):
+                page = pdf[i]
+                textpage = page.get_textpage()
+                texts.append(textpage.get_text_range())
+                textpage.close()
+                page.close()
+            return texts
+        finally:
+            pdf.close()
 
 
 def locate_subsidiary_statement(texts: list[str]) -> list[int]:

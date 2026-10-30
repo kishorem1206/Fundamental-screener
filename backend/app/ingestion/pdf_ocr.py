@@ -16,19 +16,24 @@ from __future__ import annotations
 import pypdfium2 as pdfium
 import pytesseract
 
+from app.ingestion.pdfium_lock import PDFIUM_LOCK
+
 
 def ocr_pdf_pages(pdf_bytes: bytes, page_indices: list[int], scale: float = 3.0) -> str:
     """OCR the given 0-indexed pages of a PDF and return their concatenated text."""
-    pdf = pdfium.PdfDocument(pdf_bytes)
-    try:
-        chunks = []
-        for i in page_indices:
-            if i >= len(pdf):
-                continue
-            bitmap = pdf[i].render(scale=scale)
-            image = bitmap.to_pil()
-            text = pytesseract.image_to_string(image)
-            chunks.append(f"--- page {i + 1} ---\n{text}")
-        return "\n\n".join(chunks)
-    finally:
-        pdf.close()
+    images = []
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            for i in page_indices:
+                if i >= len(pdf):
+                    continue
+                page = pdf[i]
+                try:
+                    images.append((i, page.render(scale=scale).to_pil()))
+                finally:
+                    page.close()
+        finally:
+            pdf.close()
+    # Tesseract is slow and does not touch PDFium, so it runs outside the lock
+    return "\n\n".join(f"--- page {i + 1} ---\n{pytesseract.image_to_string(image)}" for i, image in images)

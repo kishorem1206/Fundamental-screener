@@ -3,6 +3,7 @@ import { api } from "./api";
 import type { FullAnalysis, Stock } from "./types";
 import TopBar, { type Section } from "./components/TopBar";
 import MacroPage from "./components/MacroPage";
+import RunningAnalyses from "./components/RunningAnalyses";
 import QuickScreener from "./components/QuickScreener";
 import ExploreView from "./components/ExploreView";
 import AssumptionCenter from "./components/AssumptionCenter";
@@ -109,6 +110,8 @@ export default function App() {
         section={section}
         onSection={(next) => { handleBack(); setSection(next); }}
       />
+
+      <RunningAnalyses openId={analysisId} onOpenRunning={handleAnalysisStarted} onOpenFinished={handleViewAnalysis} />
 
       {/* The technical screener is a full-width workspace with its own sidebars, so it sits outside the page column. */}
       {phase === "explore" && section === "technical" && <TechnicalScreener />}

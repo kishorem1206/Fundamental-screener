@@ -5,10 +5,12 @@ All heavy lifting runs in background tasks — HTTP responses are non-blocking.
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
+import subprocess
+import threading
 from pathlib import Path
 
 import sqlalchemy as sa
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -30,8 +32,36 @@ class StartAnalysisRequest(BaseModel):
     stock_id: str
 
 
+def _run_detached(analysis_id: str, stock_id: str) -> None:
+    """Runs one analysis to the end, holding off the Mac's idle sleep meanwhile."""
+    keep_awake = None
+    try:
+        keep_awake = subprocess.Popen(["caffeinate", "-i"])
+    except OSError:  # not on a Mac
+        pass
+    try:
+        run_analysis_pipeline(analysis_id, stock_id)
+    finally:
+        if keep_awake is not None:
+            keep_awake.terminate()
+
+
+def fail_interrupted() -> int:
+    """At startup: a run still marked active died with the previous server. Says
+    so, or the page would wait on it forever."""
+    db = get_db()
+    try:
+        rows = db.query(FundamentalAnalysis).filter(FundamentalAnalysis.status.in_(("QUEUED", "RUNNING"))).all()
+        for a in rows:
+            a.status, a.error_message, a.updated_at = "FAILED", "The server restarted while this analysis was running. Start it again.", _now()
+        db.commit()
+        return len(rows)
+    finally:
+        db.close()
+
+
 @router.post("/analyses")
-def start_analysis(req: StartAnalysisRequest, background_tasks: BackgroundTasks):
+def start_analysis(req: StartAnalysisRequest):
     """Create a new fundamental analysis for the given stock_id."""
     db = get_db()
     try:
@@ -77,8 +107,8 @@ def start_analysis(req: StartAnalysisRequest, background_tasks: BackgroundTasks)
 
         logger.info("Analysis created", analysis_id=analysis_id, stock_id=req.stock_id)
 
-        # Start background pipeline
-        background_tasks.add_task(run_analysis_pipeline, analysis_id, req.stock_id)
+        # Its own thread, not tied to this request or to the browser in any way
+        threading.Thread(target=_run_detached, args=(analysis_id, req.stock_id), name=analysis_id, daemon=True).start()
 
         return {"analysis_id": analysis_id, "status": "QUEUED"}
     finally:
@@ -97,6 +127,19 @@ def list_analyses(limit: int = 20):
             .all()
         )
         return {"analyses": [analysis_to_dict(a) for a in analyses]}
+    finally:
+        db.close()
+
+
+@router.get("/analyses/active")
+def active_analyses():
+    """Runs in progress, for the status strip on every page."""
+    db = get_db()
+    try:
+        rows = (db.query(FundamentalAnalysis, Stock).join(Stock, Stock.id == FundamentalAnalysis.stock_id)
+                .filter(FundamentalAnalysis.status.in_(("QUEUED", "RUNNING"))).order_by(FundamentalAnalysis.created_at).all())
+        return {"analyses": [{"analysis_id": a.id, "company_name": s.company_name, "symbol": s.symbol, "status": a.status,
+                              "current_stage": a.current_stage, "overall_progress": a.overall_progress} for a, s in rows]}
     finally:
         db.close()
 

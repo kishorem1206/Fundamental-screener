@@ -56,6 +56,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ stock_id: stockId }),
     }),
+  activeAnalyses: () => req<{ analyses: { analysis_id: string; company_name: string; symbol: string; status: string;
+    current_stage: string | null; overall_progress: number }[] }>("/fundamental/analyses/active"),
   getAnalysisStatus: (id: string) =>
     req<import("./types").AnalysisStatus>(`/fundamental/analyses/${id}/status`),
   getAnalysis: (id: string) =>
