@@ -6,10 +6,14 @@ it belong to Business Quality and are reported separately (section 3's
   vs market            return over 1, 3, 6 and 12 months against the Nifty 50
                        (weighted 10/20/30/40), compounded excess return
   vs sector            the same against the stock's NSE sector index, or the
-                       median of same-sector stocks when NSE has no index for
-                       the sector (app/prices/benchmarks.py says which)
-  sector percentile    rank of the 6- and 12-month return among same-sector
-                       stocks — the "same-sector alternatives" comparison
+                       median of its peers when NSE has no index for the sector
+                       (app/prices/benchmarks.py says which)
+  peer percentile      rank of the 6- and 12-month return among its peers — the
+                       "same-sector alternatives" comparison
+
+Peers are the stock's basic industry when at least five others have prices,
+otherwise its industry (user's decision, 2026-10-30); too few at both levels
+and these parts are left out.
   resilience           return during the Nifty 50's worst fall of the year and
                        in the recovery since its low, against the index
   drawdown vs market   the stock's largest fall of the year against the index's
@@ -58,8 +62,17 @@ def _excess_score(excess_by_window: dict[str, float | None]) -> tuple[float | No
     return round(sum(s * w for s, w in parts) / total, 1), used
 
 
-def _peer_ids(db: Session, stock: Stock) -> list[str]:
-    return [sid for (sid,) in db.query(Stock.id).filter(Stock.sector == stock.sector, Stock.is_active.is_(True), Stock.id != stock.id)]
+def peers_of(db: Session, stock: Stock, universe: dict) -> tuple[list[dict], str | None, str | None]:
+    """(peers' returns, group name, level): the narrowest group with enough stocks with prices."""
+    for column, level in ((Stock.basic_industry, "basic industry"), (Stock.industry, "industry")):
+        name = getattr(stock, column.key)
+        if not name:
+            continue
+        ids = [sid for (sid,) in db.query(Stock.id).filter(column == name, Stock.is_active.is_(True), Stock.id != stock.id)]
+        peers = [universe[p] for p in ids if p in universe]
+        if len(peers) >= _MIN_PEERS:
+            return peers, name, level
+    return [], None, None
 
 
 def vs_market(own: dict, end: date) -> dict:
@@ -79,12 +92,12 @@ def vs_sector(db: Session, stock: Stock, own: dict, end: date, universe: dict) -
         ref = price_stats.window_returns(price_stats.index_year(bench["index"], end), end)
         label, kind = bench["index"], bench["kind"]
     else:
-        peers = [universe[p] for p in _peer_ids(db, stock) if p in universe]
+        peers, group, level = peers_of(db, stock, universe)
         ref = {}
         for w in _WINDOW_WEIGHTS:
             vals = [r[w] for r in peers if w in r]
             ref[w] = statistics.median(vals) if len(vals) >= _MIN_PEERS else None
-        label, kind = f"median of {len(peers)} {stock.sector or 'same-sector'} stocks", "peers"
+        label, kind = f"median of {len(peers)} {group or 'peer'} stocks", "peers"
     score, used = _excess_score({w: price_stats.excess(own.get(w), ref.get(w)) for w in _WINDOW_WEIGHTS})
     if score is None:
         return {"score": None, "reason": f"no comparable return for {label}", "benchmark_kind": kind}
@@ -95,7 +108,7 @@ def vs_sector(db: Session, stock: Stock, own: dict, end: date, universe: dict) -
 def sector_percentile(db: Session, stock: Stock, own: dict, universe: dict) -> dict:
     if own.get("6M") is None:
         return {"score": None, "reason": "less than six months of stored prices"}
-    peers = [universe[p] for p in _peer_ids(db, stock) if p in universe]
+    peers, group, level = peers_of(db, stock, universe)
     pcts = {}
     for w in ("6M", "1Y"):
         others = [r[w] for r in peers if w in r]
@@ -103,12 +116,12 @@ def sector_percentile(db: Session, stock: Stock, own: dict, universe: dict) -> d
             continue
         pcts[w] = 100 * (sum(1 for o in others if o < own[w]) + 0.5 * sum(1 for o in others if o == own[w])) / len(others)
     if not pcts:
-        return {"score": None, "reason": f"fewer than {_MIN_PEERS} same-sector stocks with prices"}
+        return {"score": None, "reason": f"fewer than {_MIN_PEERS} peers with prices in its basic industry or industry"}
     pct = sum(pcts.values()) / len(pcts)
     top = 100 - pct
     label = ("Top 10%" if top <= 10 else "Top 25%" if top <= 25 else "Top 40%" if top <= 40
              else "Top 50%" if top <= 50 else "Bottom 50%")
-    return {"score": round(pct, 1), "percentile": round(pct, 1), "label": label, "sector": stock.sector,
+    return {"score": round(pct, 1), "percentile": round(pct, 1), "label": label, "peer_group": group, "peer_level": level,
             "peers_compared": len(peers), "by_window": {w: round(v, 1) for w, v in pcts.items()}}
 
 

@@ -72,6 +72,7 @@ def build_export_bundle(analysis_id: str, db) -> tuple[dict, dict]:
     from app.routes.cash_flow_intelligence import get_cash_flow_intelligence
     from app.routes.bank_roe import get_bank_roe
     from app.routes.quarterly_intelligence import get_quarterly_intelligence
+    from app.routes.governance import get_credit_ratings
 
     bundle: dict = {
         f"/premium/{cid}": _safe(get_premium_extras, cid),
@@ -88,6 +89,7 @@ def build_export_bundle(analysis_id: str, db) -> tuple[dict, dict]:
         f"/broker-reports/{cid}": _safe(get_broker_reports, cid),
         f"/concall/{cid}": _safe(get_concall_intelligence, cid),
         f"/bank-roe/{cid}": _safe(get_bank_roe, cid),
+        f"/governance/{cid}/credit-ratings": _safe(get_credit_ratings, cid),
     }
 
     # These 4 tabs have a Consolidated/Standalone toggle (statement_type

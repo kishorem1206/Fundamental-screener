@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
 import type { FullAnalysis, Stock } from "./types";
 import TopBar, { type Section } from "./components/TopBar";
+import MacroPage from "./components/MacroPage";
 import QuickScreener from "./components/QuickScreener";
 import ExploreView from "./components/ExploreView";
 import AssumptionCenter from "./components/AssumptionCenter";
@@ -125,6 +126,7 @@ export default function App() {
         {phase === "explore" && section === "assumptions" && <AssumptionCenter />}
         {phase === "explore" && section === "combined" && <CombinedScore onAnalyse={startFullAnalysis} />}
         {phase === "explore" && section === "portfolio" && <Portfolio />}
+        {phase === "explore" && section === "macro" && <MacroPage />}
         {phase === "explore" && section === "explore" && (
           <ExploreView
             onAnalysisStarted={handleAnalysisStarted}

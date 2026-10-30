@@ -1,4 +1,4 @@
-# Fundamental Screener
+# Kishore Stock Screener
 
 An AI-assisted equity research platform for the Indian market (NSE): fundamental and technical analysis in one app. It ingests financial data from multiple sources, scores every listed company on the Stock Quality & Portfolio Replacement framework (Quality, Fundamental, Quantitative, Relative Strength, Technical and Valuation, kept separate and never averaged), classifies each stock and compares it with what you own — on top of the original sector-aware fundamental analysis, deep reports and technical screener — across the full ~2,600-stock universe.
 

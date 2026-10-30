@@ -16,9 +16,11 @@ here; returns against the market and the sector belong to Relative Strength.
   drawdown              largest fall from a high over a year
   risk-adjusted return  one-year return per unit of volatility
 
-Earnings revisions (also on the framework's list) are left out: analyst
-estimates are stored for only about 56 companies. Quality Score change over
-time comes with Quality Momentum (phase 8).
+Earnings revisions (also on the framework's list) are left out by the user's
+decision of 2026-10-30: they are analysts' opinions, and external opinion does
+not enter a score here. They are shown on the stock for context
+(app/ingestion/estimate_revisions_client.py). Quality Score change over time
+comes with Quality Momentum (phase 8).
 """
 from __future__ import annotations
 
@@ -148,4 +150,4 @@ def compute_quantitative(db: Session, stock_id: str, series: dict, lender: bool,
     covered = sum(p["weight"] for p in scored.values())
     score = round(sum(p["score"] * p["weight"] for p in scored.values()) / covered, 1) if covered >= 0.5 else None
     return {"score": score, "coverage": round(covered, 3), "components": parts,
-            "not_measured": ["earnings revisions"], "as_of": end and end.isoformat()}
+            "not_measured": ["earnings revisions (shown, not scored)"], "as_of": end and end.isoformat()}

@@ -484,13 +484,18 @@ def test_point_in_time_metrics_use_published_statements_and_skip_one_off_quarter
     assert m["revenue_cagr_3y"] > 11 and m["latest_fy"] == "FY2025" and "roce" in m
 
 
-def test_sector_rank_and_labels():
-    rows = [(f"S{i}", "Pharma", float(q)) for i, q in enumerate([58, 70, 40, 65, 30, 52, 47, 61, 35, 44])]
-    rows += [("X1", "Tiny", 90.0), ("N1", "Pharma", None)]
+def test_rank_uses_basic_industry_then_industry():
+    qualities = [58, 70, 40, 65, 30, 52, 47, 61, 35, 44]
+    rows = [(f"S{i}", "Pharmaceuticals", "Pharma & Biotech", float(q)) for i, q in enumerate(qualities)]
+    rows += [("X1", "Biotechnology", "Pharma & Biotech", 90.0), ("N1", "Pharmaceuticals", "Pharma & Biotech", None),
+             ("T1", "Tiny", "Tiny Industry", 80.0), ("U1", None, None, 80.0)]
     r = sector_rank.ranks(rows)
     assert r["S1"]["rank"] == 1 and r["S1"]["of"] == 10 and r["S1"]["label"] == "Top 10%"
+    assert r["S1"]["group"] == "Pharmaceuticals" and r["S1"]["level"] == "basic industry"
     assert r["S0"]["rank"] == 4 and r["S0"]["label"] == "Top 40%"
-    assert "X1" not in r and "N1" not in r  # too few peers; no score
+    # one biotech stock: too few in its basic industry, ranked in its industry instead
+    assert r["X1"]["group"] == "Pharma & Biotech" and r["X1"]["level"] == "industry" and r["X1"]["rank"] == 1 and r["X1"]["of"] == 11
+    assert "T1" not in r and "U1" not in r and "N1" not in r  # too few peers at both levels; no industry; no score
 
 
 # ── Phase 9: decision engine ────────────────────────────────────────────────
@@ -683,3 +688,32 @@ def test_falling_returns_and_margins_pull_profitability_down():
     assert _profitability_score(level) == base  # no labels, no change
     out = compute_scores({**falling, "revenue_cagr_3y": 20.0}, sector="IT Services")
     assert out["profitability_direction"]["adjustment"] == -12.0
+
+
+def test_relative_strength_peers_prefer_basic_industry_then_industry():
+    from types import SimpleNamespace as NS
+
+    from app.framework import relative_strength as rs
+
+    members = {"basic_industry": {"Ships": ["A", "B"]}, "industry": {"Manufacturing": ["A", "B", "C", "D", "E", "F", "G"]}}
+
+    class Q:
+        def __init__(self):
+            self.rows = []
+
+        def filter(self, cond, *rest):
+            self.rows = [(s,) for s in members[cond.left.key].get(cond.right.value, [])]
+            return self
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    db = NS(query=lambda *a: Q())
+    stock = NS(id="Z", basic_industry="Ships", industry="Manufacturing")
+    universe = {k: {"6M": 1.0} for k in "ABCDEFG"}
+    peers, group, level = rs.peers_of(db, stock, universe)
+    assert (len(peers), group, level) == (7, "Manufacturing", "industry")  # two shipbuilders are too few
+    members["basic_industry"]["Ships"] = list("ABCDE")
+    assert rs.peers_of(db, stock, universe)[1:] == ("Ships", "basic industry")
+    members["basic_industry"]["Ships"], members["industry"]["Manufacturing"] = ["A"], ["A", "B"]
+    assert rs.peers_of(db, stock, universe) == ([], None, None)  # never falls back to the broad sector

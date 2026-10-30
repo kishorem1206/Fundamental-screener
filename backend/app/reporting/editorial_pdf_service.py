@@ -30,7 +30,7 @@ from app.logger import logger
 _FOOTER_TEMPLATE = """
 <div style="font-size:8px; width:100%; padding:0 16mm; color:#8d9994; font-family:Inter,sans-serif;
             display:flex; justify-content:space-between;">
-  <span>Fundamental Research · Editorial report</span>
+  <span>Kishore Stock Screener · Editorial report</span>
   <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>
 """

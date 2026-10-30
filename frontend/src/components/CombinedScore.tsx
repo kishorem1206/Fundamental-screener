@@ -31,7 +31,7 @@ export interface FrameworkScoreRow {
   quality_change_6m: number | null;
   quality_change_12m: number | null;
   quality_direction: string | null;
-  sector_rank?: { rank: number; of: number; top_pct: number; label: string; sector: string } | null;
+  sector_rank?: { rank: number; of: number; top_pct: number; label: string; group: string; level: string } | null;
 }
 
 type Part = { score: number | null; weight?: number; reason?: string; note?: string; source?: string; basis?: string; [k: string]: unknown };
@@ -44,8 +44,21 @@ const CLASS_COLOR: Record<string, string> = {
   "Tactical Only": "#e0793c", "Replacement Candidate": "#d9694f", "Avoid": "#d9694f",
 };
 
+export interface SebiOrderItem { date: string; title: string; kind: string; outcome: string | null; penalty_rs: number | null; role: string;
+  company_named: boolean | null; grade: string; points: number; url: string; pdf_url: string | null }
+export interface RatingItem { date: string; agency: string | null; instrument: string | null; rating: string | null; short_term: string | null;
+  outlook: string | null; action: string | null; previous_rating: string | null; previous_outlook: string | null; parsed: boolean;
+  filing_url: string; rationale_url: string | null; excerpt?: string | null }
+export interface RiskRecord {
+  regulatory: { measured: boolean; reason?: string; window?: string; orders: SebiOrderItem[]; deduction: number; red_flag: string | null };
+}
+export interface CreditRatings { letters: number; read: number; current: RatingItem | null; by_agency: Record<string, RatingItem>; history: RatingItem[]; source: string }
 export interface FrameworkStockDetail extends FrameworkScoreRow {
   best_alternative?: Alt | null;
+  risk?: RiskRecord | null;
+  sector_flow?: import("./MacroPage").SectorFlow | null;
+  estimates?: { eps_now: number; estimate_for: string; revision_pct: number | null; over: string; raised_30d: number | null; cut_30d: number | null;
+    analysts: number | null; as_of: string; source: string } | null;
   replacement?: { existing: string; candidate: string; differences: Record<string, number | null>; why_better: string[];
     valuation: { existing: string | null; candidate: string | null };
     risk: { existing: Record<string, number | null>; candidate: Record<string, number | null> } } | null;
@@ -206,7 +219,7 @@ export default function CombinedScore({ onAnalyse }: Props) {
                     Quality momentum{sort === "quality_change_12m" && <Arrow className="h-3 w-3" />}
                   </button>
                 </th>
-                <th className="text-left py-2 px-2 text-xs font-medium" title="Rank of Quality within the stock's sector">Sector rank</th>
+                <th className="text-left py-2 px-2 text-xs font-medium" title="Rank of Quality among the stock's peers: its basic industry, or its industry when that is too small">Peer rank</th>
                 <th className="text-left py-2 px-2 text-xs font-medium">Business trend</th>
                 <th className="text-right py-2 px-2 text-xs font-medium">
                   <button onClick={() => sortBy("market_cap")} className="inline-flex items-center gap-1"
@@ -259,7 +272,7 @@ export default function CombinedScore({ onAnalyse }: Props) {
                       {r.quality_change_6m !== null && <span style={{ color: "var(--text-dim)" }}> ({r.quality_change_6m > 0 ? "+" : ""}{r.quality_change_6m.toFixed(1)})</span>}
                     </td>
                     <td className="py-2 px-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-                      {r.sector_rank ? <>#{r.sector_rank.rank}/{r.sector_rank.of} <span style={{ color: "var(--text-dim)" }}>{r.sector_rank.label}</span></> : "—"}
+                      {r.sector_rank ? <span title={`Among ${r.sector_rank.of} stocks in ${r.sector_rank.group} (${r.sector_rank.level})`}>#{r.sector_rank.rank}/{r.sector_rank.of} <span style={{ color: "var(--text-dim)" }}>{r.sector_rank.label}</span></span> : "—"}
                     </td>
                     <td className="py-2 px-2 text-xs" style={{ color: t?.color ?? "var(--text-dim)" }}>{t?.label ?? "—"}</td>
                     <td className="py-2 px-2 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>
@@ -302,7 +315,7 @@ const LABELS: Record<string, string> = {
   capital_allocation: "Capital allocation", promoter_behaviour: "Promoter behaviour", management_credibility: "Management credibility",
   growth_acceleration: "Growth acceleration", margin_change: "Margin change", return_change: "Return change",
   debt_change: "Debt change", volatility: "Volatility", drawdown: "Drawdown", risk_adjusted_return: "Risk-adjusted return",
-  vs_market: "vs Nifty 50", vs_sector: "vs sector", sector_percentile: "Sector percentile", resilience: "Resilience in market falls",
+  vs_market: "vs Nifty 50", vs_sector: "vs sector", sector_percentile: "Peer percentile", resilience: "Resilience in market falls",
   drawdown_vs_market: "Drawdown vs market", near_52_week_high: "Near 52-week high",
   trend_structure: "Trend structure", moving_averages: "Moving averages", rsi: "RSI (14)", macd: "MACD", volume: "Volume confirmation",
   breakout: "Breakout / breakdown", base: "Base / contraction", reversal: "Reversal structure",
@@ -352,6 +365,68 @@ function PartsTable({ title, total, parts }: { title: string; total: number | nu
   );
 }
 
+// One click to check a stock elsewhere. Direct where the site has a stable address for a
+// symbol; a site-limited search where its address needs an internal ID this app does not hold.
+function openLinks(symbol: string, name: string) {
+  const sym = encodeURIComponent(symbol);
+  const search = (site: string) => `https://www.google.com/search?q=${encodeURIComponent(`site:${site} ${name}`)}`;
+  return [
+    ["Screener", `https://www.screener.in/company/${sym}/consolidated/`],
+    ["NSE", `https://www.nseindia.com/get-quotes/equity?symbol=${sym}`],
+    ["BSE", search("bseindia.com/stock-share-price")],
+    ["TradingView", `https://www.tradingview.com/symbols/NSE-${sym}/`],
+    ["Chartink", `https://chartink.com/stocks/${sym.toLowerCase()}.html`],
+    ["Trendlyne", `https://trendlyne.com/research-reports/stock/${sym}/`],
+    ["Tickertape", search("tickertape.in/stocks")],
+    ["MarketsMojo", `https://www.marketsmojo.com/mojo/stock-research?q=${encodeURIComponent(name)}`],
+    ["Moneycontrol", search("moneycontrol.com/india/stockpricequote")],
+    ["Tijori", search("tijorifinance.com/company")],
+  ] as const;
+}
+
+function OpenInBar({ symbol, name }: { symbol: string; name: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: "var(--text-dim)" }}>
+      <span>Open in</span>
+      {openLinks(symbol, name).map(([label, href]) => (
+        <a key={label} href={href} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--text-secondary)" }}>{label}</a>
+      ))}
+    </div>
+  );
+}
+
+const GRADE_COLOR: Record<string, string> = { SERIOUS: "var(--accent-red)", PENALTY: "#d9694f", MATTER: "#d9a34f", SETTLED: "#d9a34f", NOTE: "var(--text-dim)" };
+
+function RiskPanel({ risk }: { risk: RiskRecord }) {
+  const { regulatory: rg } = risk;
+  const shown = rg.orders.filter(o => o.grade !== "NOTE").concat(rg.orders.filter(o => o.grade === "NOTE")).slice(0, 8);
+  return (
+    <div className="grid gap-5 lg:grid-cols-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+      <div className="space-y-1.5">
+        <div className="text-sm" style={{ color: "var(--text-primary)" }}>Regulatory record (SEBI orders)</div>
+        {!rg.measured ? <div style={{ color: "var(--text-dim)" }}>{rg.reason}</div> : (
+          <>
+            <div>{rg.orders.length === 0 ? "No SEBI order names the company in the last three years." :
+              `${rg.orders.length} order${rg.orders.length > 1 ? "s" : ""} in the last three years; ${rg.deduction} point${rg.deduction === 1 ? "" : "s"} off Business Quality.`}</div>
+            {rg.red_flag && <div style={{ color: "var(--accent-red)" }}>Red flag: {rg.red_flag}</div>}
+            {shown.map(o => (
+              <div key={o.url}>
+                <span style={{ color: GRADE_COLOR[o.grade] }}>{o.grade.toLowerCase()}</span>{" "}
+                <span style={{ color: "var(--text-dim)" }}>{o.date}</span>{" "}
+                <a href={o.pdf_url ?? o.url} target="_blank" rel="noreferrer" className="underline">{o.title}</a>
+                <span style={{ color: "var(--text-dim)" }}>
+                  {o.outcome ? ` — ${o.outcome.toLowerCase()}` : ""}{o.penalty_rs ? ` up to ₹${(o.penalty_rs / 1e5).toLocaleString("en-IN", { maximumFractionDigits: 1 })} lakh` : ""}
+                  {o.company_named === false ? ", company not named in the directions" : ""}
+                  {o.role === "SCRIP" ? " (trading in its shares)" : o.role === "GROUP" ? " (group order)" : ""}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?: () => void }) {
   const [d, setD] = useState<FrameworkStockDetail | null>(null);
   const [err, setErr] = useState("");
@@ -370,6 +445,7 @@ export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?:
       `${label} ${h.quality.toFixed(1)} (${h.change! > 0 ? "+" : ""}${h.change!.toFixed(1)} since, ${h.method}${h.as_of ? ` at ${h.as_of}` : ""})`;
   return (
     <div className="p-4 space-y-4" style={{ background: "var(--glass)" }}>
+      <OpenInBar symbol={d.symbol} name={d.company_name} />
       <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
         <b style={{ color: "var(--text-primary)" }}>Quality {quality?.score?.toFixed(1) ?? "—"}</b>
         {quality?.band ? ` (${quality.band.toLowerCase().replace("_", " ")})` : ""} = {quality?.formula ?? "—"}.
@@ -403,7 +479,7 @@ export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?:
             {dc.interpretation.performance && <>The stock is {dc.interpretation.performance}. </>}
           </div>
           {d.best_alternative && (
-            <div>Best same-sector alternative now: <b style={{ color: "var(--text-primary)" }}>{d.best_alternative.symbol}</b> ({d.best_alternative.classification},{" "}
+            <div>Best alternative in the same basic industry now: <b style={{ color: "var(--text-primary)" }}>{d.best_alternative.symbol}</b> ({d.best_alternative.classification},{" "}
               {d.best_alternative.action.toLowerCase()}, Quality {d.best_alternative.quality?.toFixed(1) ?? "—"}).</div>
           )}
           {d.replacement && (
@@ -430,7 +506,7 @@ export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?:
         <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
           {mo && <><b style={{ color: "var(--text-primary)" }}>Quality momentum: {mo.direction.toLowerCase().replace("_", " ")}</b>.{" "}
             {[horizon(mo["6m"], "6 months ago"), horizon(mo["12m"], "12 months ago")].filter(Boolean).join("; ")}.{" "}</>}
-          {d.sector_rank && <>Quality ranks #{d.sector_rank.rank} of {d.sector_rank.of} in {d.sector_rank.sector} ({d.sector_rank.label}).</>}
+          {d.sector_rank && <>Quality ranks #{d.sector_rank.rank} of {d.sector_rank.of} in {d.sector_rank.group} ({d.sector_rank.label}).</>}
         </div>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
@@ -455,6 +531,26 @@ export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?:
           {vl.pe ? `, P/E ${vl.pe}` : ""}. </>}{vl.ttm_note ?? ""}{vl.reason ?? ""}
         </div>
       )}
+      {d.sector_flow && (
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          <b style={{ color: "var(--text-primary)" }}>Foreign money in {d.sector_flow.sector}:</b>{" "}
+          FPIs were net {d.sector_flow.net_cr >= 0 ? "buyers" : "sellers"} of ₹{Math.abs(Math.round(d.sector_flow.net_cr)).toLocaleString("en-IN")} crore
+          over the last {d.sector_flow.fortnights} fortnights to {d.sector_flow.period_end}
+          {d.sector_flow.net_pct_of_holding !== null ? ` (${d.sector_flow.net_pct_of_holding > 0 ? "+" : ""}${d.sector_flow.net_pct_of_holding}% of what they hold there)` : ""},
+          #{d.sector_flow.rank} of {d.sector_flow.of} sectors. <span style={{ color: "var(--text-dim)" }}>NSDL; for context, not part of Relative Strength or any score.</span>
+        </div>
+      )}
+      {d.estimates && (
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          <b style={{ color: "var(--text-primary)" }}>Analyst estimates:</b>{" "}
+          consensus EPS for the {d.estimates.estimate_for} is ₹{d.estimates.eps_now.toFixed(2)}
+          {d.estimates.revision_pct !== null ? `, ${d.estimates.revision_pct > 0 ? "+" : ""}${d.estimates.revision_pct.toFixed(1)}% over ${d.estimates.over}` : ""}
+          {d.estimates.raised_30d !== null || d.estimates.cut_30d !== null ? ` (${d.estimates.raised_30d ?? 0} raised, ${d.estimates.cut_30d ?? 0} cut in 30 days)` : ""}
+          {d.estimates.analysts ? `, ${d.estimates.analysts} analysts` : ""}.{" "}
+          <span style={{ color: "var(--text-dim)" }}>{d.estimates.source}, {d.estimates.as_of}; for context, not part of any score.</span>
+        </div>
+      )}
+      {d.risk && <RiskPanel risk={d.risk} />}
       <div className="text-[11px] space-y-1" style={{ color: "var(--text-dim)" }}>
         {f?.double_in && <div>Doubling: {facts(f.double_in as Part)} · rates {JSON.stringify((f.double_in as Record<string, unknown>).growth_pct_per_year)}</div>}
         {bq && <div>Business quality from {bq.source ?? "no Screener history"} ({bq.years_on_record} years). Not measured: {bq.not_measured.join(", ")}.</div>}

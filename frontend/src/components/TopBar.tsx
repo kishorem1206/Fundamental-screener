@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase } from "lucide-react";
+import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase, Globe } from "lucide-react";
 import type { Stock } from "../types";
 
-export type Section = "combined" | "explore" | "quick" | "technical" | "portfolio" | "assumptions";
+export type Section = "combined" | "explore" | "quick" | "technical" | "portfolio" | "macro" | "assumptions";
 
 interface Props {
   allStocks: Stock[];
@@ -74,7 +74,7 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
         </div>
         <div className="hidden sm:block">
           <div className="text-base font-semibold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
-            Equity Research
+            Kishore Stock Screener
           </div>
           <div className="text-xs" style={{ color: "var(--text-dim)" }}>India · NSE / BSE</div>
         </div>
@@ -137,6 +137,7 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
           { key: "quick" as const, label: "Quick Screener", Icon: Zap },
           { key: "technical" as const, label: "Technical Screener", Icon: CandlestickChart },
           { key: "portfolio" as const, label: "Portfolio", Icon: Briefcase },
+          { key: "macro" as const, label: "Market & Macro", Icon: Globe },
           { key: "assumptions" as const, label: "Assumptions", Icon: SlidersHorizontal },
         ]).map(({ key, label, Icon }) => {
           const active = !showBack && section === key;

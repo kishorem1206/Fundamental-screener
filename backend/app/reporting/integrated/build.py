@@ -18,7 +18,7 @@ _HERE = Path(__file__).parent
 _DEEP_TEMPLATE = _HERE.parent.parent / "bie" / "report" / "template.html.jinja"
 _FONT = _HERE.parent / "fonts" / "Fraunces-Variable.ttf"
 _FOOTER = """<div style="font-size:8px; width:100%; padding:0 16mm; color:#8d9994; font-family:Inter,sans-serif;
-  display:flex; justify-content:space-between;"><span>Equity Research · Integrated report · __NAME__ · Part A: Stock Quality framework</span>
+  display:flex; justify-content:space-between;"><span>Kishore Stock Screener · Integrated report · __NAME__ · Part A: Stock Quality framework</span>
   <span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>"""
 
 SCORES = [
@@ -39,7 +39,7 @@ LABELS = {
     "promoter_behaviour": "Promoter behaviour", "management_credibility": "Management credibility",
     "growth_acceleration": "Growth acceleration", "margin_change": "Margin change", "return_change": "Return change",
     "debt_change": "Debt change", "volatility": "Volatility", "drawdown": "Drawdown", "risk_adjusted_return": "Risk-adjusted return",
-    "vs_market": "vs Nifty 50", "vs_sector": "vs sector", "sector_percentile": "Sector percentile",
+    "vs_market": "vs Nifty 50", "vs_sector": "vs sector", "sector_percentile": "Peer percentile",
     "resilience": "Resilience in market falls", "drawdown_vs_market": "Drawdown vs market", "near_52_week_high": "Near 52-week high",
     "trend_structure": "Trend structure", "moving_averages": "Moving averages", "rsi": "RSI (14)", "macd": "MACD",
     "volume": "Volume confirmation", "breakout": "Breakout / breakdown", "base": "Base / contraction", "reversal": "Reversal structure",
@@ -120,8 +120,9 @@ def context(db: Session, stock: Stock) -> dict:
         raise LookupError(f"No framework scores for {stock.symbol} yet")
     v = values(row)
     detail = row.detail or {}
-    peers = [r for r in store.latest_for_all(db) if (s := db.get(Stock, r.stock_id)) is not None and s.sector == stock.sector]
-    rank = sector_rank.ranks([(r.stock_id, stock.sector, float(r.quality) if r.quality is not None else None) for r in peers]).get(stock.id)
+    peers = [(r.stock_id, s.basic_industry, s.industry, float(r.quality) if r.quality is not None else None)
+             for r in store.latest_for_all(db) if (s := db.get(Stock, r.stock_id)) is not None and s.sector == stock.sector]
+    rank = sector_rank.ranks(peers).get(stock.id)
     alt = best_alternative(db, stock, stock.id)
     repl = (replacement({**v, "symbol": stock.symbol, "valuation_view": row.valuation_view}, alt, detail, store.latest(db, alt["stock_id"]))
             if alt and row.classification in ("Replacement Candidate", "Improving / Watch", "Avoid") else None)
@@ -201,7 +202,7 @@ def build(db: Session, symbol: str) -> str:
     for path in (part_a, editorial, deep):
         if path:
             writer.append(str(path))
-    writer.add_metadata({"/Title": f"{stock.company_name} — integrated report", "/Author": "Equity Research"})
+    writer.add_metadata({"/Title": f"{stock.company_name} — integrated report", "/Author": "Kishore Stock Screener"})
     final = reports / f"{stem}.pdf"
     with open(final, "wb") as fh:
         writer.write(fh)

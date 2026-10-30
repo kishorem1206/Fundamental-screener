@@ -41,11 +41,20 @@ def _sector_latest(db: Session, sector: str) -> list[FrameworkScore]:
     return list(best.values())
 
 
-def _apply(row: FrameworkScore, rank: dict | None) -> dict:
+def _apply(row: FrameworkScore, rank: dict | None, risk: dict | None = None) -> dict:
+    """`risk`: the stock's current regulatory record (app/risk/record.py),
+    read fresh at every decision so a new SEBI order counts without re-scoring."""
+    if risk is not None:
+        row.detail = {**(row.detail or {}), "risk": risk}
     d = decide(values(row), row.detail or {}, rank)
     row.classification, row.action = d["classification"], d["action"]
     row.detail = {**(row.detail or {}), "decision": {**d, "sector_rank": rank, "interpretation": interpretation(row.detail or {})}}
     return d
+
+
+def _rank_rows(rows: list[FrameworkScore], stocks: dict[str, Stock]) -> list[tuple]:
+    return [(r.stock_id, s.basic_industry, s.industry, float(r.quality) if r.quality is not None else None)
+            for r in rows if (s := stocks.get(r.stock_id)) is not None]
 
 
 def decide_one(db: Session, stock_id: str) -> dict | None:
@@ -55,31 +64,47 @@ def decide_one(db: Session, stock_id: str) -> dict | None:
     if row is None or stock is None:
         return None
     peers = _sector_latest(db, stock.sector) if stock.sector else [row]
-    ranks = sector_rank.ranks([(r.stock_id, stock.sector, float(r.quality) if r.quality is not None else None) for r in peers])
-    return _apply(row, ranks.get(stock_id))
+    ranks = sector_rank.ranks(_rank_rows(peers, {r.stock_id: db.get(Stock, r.stock_id) for r in peers}))
+    return _apply(row, ranks.get(stock_id), _risk(db, {stock_id}).get(stock_id))
+
+
+def _risk(db: Session, stock_ids: set[str]) -> dict[str, dict]:
+    from app.risk.record import for_all, for_stock
+
+    try:
+        if len(stock_ids) == 1:
+            (sid,) = stock_ids
+            return {sid: for_stock(db, sid)}
+        return for_all(db, stock_ids)
+    except Exception:  # noqa: BLE001 — tables not migrated yet: decide without them
+        db.rollback()
+        return {}
 
 
 def refresh_all(db: Session) -> dict:
     stocks = {s.id: s for s in db.query(Stock).filter(Stock.is_active.is_(True))}
     latest = [r for r in store.latest_for_all(db) if r.stock_id in stocks]
-    ranks = sector_rank.ranks([(r.stock_id, stocks[r.stock_id].sector, float(r.quality) if r.quality is not None else None)
-                               for r in latest])
+    ranks = sector_rank.ranks(_rank_rows(latest, stocks))
+    risk = _risk(db, {r.stock_id for r in latest})
     counts: dict[str, int] = {}
     for r in latest:
-        d = _apply(r, ranks.get(r.stock_id))
+        d = _apply(r, ranks.get(r.stock_id), risk.get(r.stock_id))
         counts[d["classification"] or "unscored"] = counts.get(d["classification"] or "unscored", 0) + 1
     db.commit()
     return counts
 
 
 def best_alternative(db: Session, stock: Stock, exclude: str) -> dict | None:
-    """The strongest current opportunity in the same sector: a stock passing
-    the core gate, ranked by how ready it is to buy (add gradually, add on
-    confirmation, hold) and then by Quality — "better current opportunity",
-    which the framework keeps apart from "better company" (section 12)."""
-    if not stock.sector:
+    """The strongest current opportunity in the same basic industry: a stock
+    passing the core gate, ranked by how ready it is to buy (add gradually, add
+    on confirmation, hold) and then by Quality — "better current opportunity",
+    which the framework keeps apart from "better company" (section 12). Like
+    for like: a shipbuilder is not replaced by a defence electronics maker just
+    because both sit in Capital Goods, so a narrow industry may have no alternative."""
+    if not stock.sector or not stock.basic_industry:
         return None
-    rows = [r for r in _sector_latest(db, stock.sector) if r.stock_id != exclude and r.quality is not None
+    same = {sid for (sid,) in db.query(Stock.id).filter(Stock.basic_industry == stock.basic_industry, Stock.is_active.is_(True))}
+    rows = [r for r in _sector_latest(db, stock.sector) if r.stock_id in same and r.stock_id != exclude and r.quality is not None
             and r.classification in ("Core Quality", "Investable") and r.action in _ACTION_ORDER]
     if not rows:
         return None

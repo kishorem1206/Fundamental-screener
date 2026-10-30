@@ -24,12 +24,20 @@ rest rescaled; under half the weight measured gives no score):
   management credibility  how often management's guidance was kept rather than
                           cut, from the concall analysis (where it has run)
 
+Regulatory record (app/risk/record.py): SEBI orders against the company over
+the last three years take up to 20 points off the score (a serious order 15,
+an adjudication penalty 6, penalties on others in the company's matter 4, a
+settlement 3). It is a deduction, not a weighted part, so a clean record
+leaves the score as it was.
+
 Source: Screener annual statements and shareholding (app/framework/
-screener_series.py), NSE shareholding for pledges, concall guidance tracking.
+screener_series.py), NSE shareholding for pledges, concall guidance tracking,
+SEBI's enforcement orders.
 
 Not measured, and listed as such in every result: brand strength, customer
-concentration, industry structure and regulatory risk — there is no source
-for them across the universe, and they are not guessed.
+concentration and industry structure — there is no source for them across
+the universe, and they are not guessed. Regulatory risk is listed as not
+measured only while SEBI's orders have not been read.
 """
 from __future__ import annotations
 
@@ -44,7 +52,7 @@ _WEIGHTS = {"durability": 0.25, "margin_resilience": 0.20, "predictability": 0.1
             "promoter_behaviour": 0.15, "management_credibility": 0.10}
 _WEIGHTS_LENDER = {"durability": 0.35, "predictability": 0.20, "capital_allocation": 0.20,
                    "promoter_behaviour": 0.15, "management_credibility": 0.10}
-NOT_MEASURED = ["brand strength", "customer concentration", "industry structure", "regulatory risk"]
+NOT_MEASURED = ["brand strength", "customer concentration", "industry structure"]
 
 _YEARS = 10
 _MIN_YEARS = 5
@@ -202,5 +210,21 @@ def compute_business_quality(db: Session, company_id: str, lender: bool, series:
     scored = {n: p for n, p in parts.items() if p.get("score") is not None}
     covered = sum(p["weight"] for p in scored.values())
     score = round(sum(p["score"] * p["weight"] for p in scored.values()) / covered, 1) if covered >= 0.5 else None
-    return {"score": score, "coverage": round(covered, 3), "components": parts, "not_measured": NOT_MEASURED,
-            "source": series.get("source"), "years_on_record": len(series["years"])}
+    regulatory = regulatory_record(db, company_id, as_of)
+    out = {"score": score, "coverage": round(covered, 3), "components": parts, "regulatory_record": regulatory,
+           "not_measured": NOT_MEASURED + ([] if regulatory["measured"] else ["regulatory risk"]),
+           "source": series.get("source"), "years_on_record": len(series["years"])}
+    if score is not None and regulatory["deduction"]:
+        out["before_regulatory_deduction"] = score
+        out["score"] = round(max(0.0, score - regulatory["deduction"]), 1)
+    return out
+
+
+def regulatory_record(db: Session, company_id: str, as_of=None) -> dict:
+    from app.risk.record import for_stock
+
+    try:
+        return for_stock(db, company_id, as_of)["regulatory"]
+    except Exception as exc:  # noqa: BLE001 — a missing table must not stop scoring
+        return {"measured": False, "reason": f"regulatory record not available ({str(exc)[:80]})", "orders": [],
+                "deduction": 0, "red_flag": None}

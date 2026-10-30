@@ -39,7 +39,7 @@ def list_scores(
         stocks = {s.id: s for s in db.query(Stock).filter(Stock.is_active.is_(True))}
         latest = [r for r in store.latest_for_all(db) if r.stock_id in stocks]
         rows = [_row(r, stocks[r.stock_id]) for r in latest]
-        ranked = sector_rank.ranks([(r["stock_id"], r["sector"], r["quality"]) for r in rows])
+        ranked = sector_rank.ranks([(r["stock_id"], stocks[r["stock_id"]].basic_industry, stocks[r["stock_id"]].industry, r["quality"]) for r in rows])
         for r in rows:
             r["sector_rank"] = ranked.get(r["stock_id"])
         if q:
@@ -76,13 +76,29 @@ def stock_scores(symbol: str):
         score = store.latest(db, stock.id)
         if score is None:
             raise HTTPException(404, f"No framework scores for '{symbol}' yet")
-        peers = [(r.stock_id, s.sector, float(r.quality) if r.quality is not None else None)
+        peers = [(r.stock_id, s.basic_industry, s.industry, float(r.quality) if r.quality is not None else None)
                  for r in store.latest_for_all(db) if (s := db.get(Stock, r.stock_id)) is not None and s.sector == stock.sector]
         from app.framework.decisions import best_alternative, replacement, values
 
+        from app.risk.record import for_stock
+
         alt = best_alternative(db, stock, stock.id)
+        try:
+            risk = for_stock(db, stock.id)  # read fresh: a new order shows before the next scoring
+        except Exception:  # noqa: BLE001 — tables not migrated yet
+            db.rollback()
+            risk = None
         out = {**_row(score, stock), "sector_rank": sector_rank.ranks(peers).get(stock.id), "detail": score.detail,
-               "best_alternative": alt}
+               "best_alternative": alt, "risk": risk}
+        try:
+            from app.macro.fpi import flow_for_sector
+
+            from app.ingestion.estimate_revisions_client import for_stock as estimates_for
+
+            out["sector_flow"] = flow_for_sector(db, stock.sector)  # shown beside Relative Strength, never scored
+            out["estimates"] = estimates_for(db, stock.id)  # analysts' opinion: shown, never scored
+        except Exception:  # noqa: BLE001 — tables not migrated yet
+            db.rollback()
         if alt and score.classification in ("Replacement Candidate", "Improving / Watch", "Avoid"):
             out["replacement"] = replacement({**values(score), "symbol": stock.symbol, "valuation_view": score.valuation_view},
                                              alt, score.detail, store.latest(db, alt["stock_id"]))

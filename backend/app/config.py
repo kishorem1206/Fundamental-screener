@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     redis_key_prefix: str = "fa:"
 
+    # Broker holdings APIs (app/portfolio/brokers.py) — read-only, holdings
+    # only. Set in .env; never sent to the browser. Dhan and Upstox tokens
+    # expire daily (Upstox) or after the validity you chose (Dhan).
+    dhan_access_token: str = ""
+    upstox_access_token: str = ""
+    groww_access_token: str = ""
+
     llm_provider: str = "gpt-oss"  # read by app/technical/llm/factory.py
     llm_model: str = "openai/gpt-oss-20b"
     llm_api_key: str = ""

@@ -124,6 +124,9 @@ export const api = {
     req<import("./types").BankRoeAnalysis>(`/bank-roe/${companyId}`),
   getCompanyScores: (params: Record<string, string>) =>
     req<import("./types").CompanyScoresResponse>(`/company-scores?${new URLSearchParams(params).toString()}`),
+  macroOverview: () => req<import("./components/MacroPage").MacroOverview>(`/macro/overview`),
+  getCreditRatings: (companyId: string) =>
+    req<import("./components/CombinedScore").CreditRatings>(`/governance/${companyId}/credit-ratings`),
   getFrameworkStock: (symbol: string) =>
     req<import("./components/CombinedScore").FrameworkStockDetail>(`/framework/${encodeURIComponent(symbol)}`),
   getPortfolio: () => req<import("./components/Portfolio").PortfolioResponse>(`/portfolio`),
@@ -139,7 +142,9 @@ export const api = {
   savePortfolioSettings: (settings: object) => req<object>(`/portfolio/settings`, { method: "PUT", body: JSON.stringify(settings) }),
   nseQuote: (symbol: string) =>
     req<{ last_price: number | null; change_pct: number | null; as_of: string | null; previous_close: number | null }>(`/nse/quote/${encodeURIComponent(symbol)}`),
-  repricePortfolio: () => req<{ updated: number; of: number; price_date: string | null }>(`/portfolio/reprice`, { method: "POST" }),
+  repricePortfolio: () => req<{ updated: number; of: number; price_date: string | null; nav_date?: string | null }>(`/portfolio/reprice`, { method: "POST" }),
+  brokers: () => req<{ broker: string; label: string; configured: boolean; env: string }[]>(`/portfolio/brokers`),
+  brokerSync: (broker: string) => req<{ rows: number; matched_stocks: number; no_price: string[] }>(`/portfolio/broker/${broker}/sync`, { method: "POST" }),
   explainFramework: (symbol: string) =>
     req<{ summary: string; major_risks?: string[]; what_would_change_it?: string | null; author: string }>(`/framework/${encodeURIComponent(symbol)}/explain`, { method: "POST" }),
   getFrameworkScores: (params: Record<string, string>) =>

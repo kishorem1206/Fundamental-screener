@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import config
 from app.logger import logger
-from app.routes import health, stocks, fundamental, banking_data, screening, governance, valuation, sectors, sources, analyst_consensus, documents, company_summary, yfinance_extended, segments, market_movers, broker_reports, brands, concall, premium, history_charts, pl_intelligence, balance_sheet_intelligence, cash_flow_intelligence, quarterly_intelligence, bank_roe, company_scores, quick_scores, ipo_issues, bie, prices, framework, portfolio, nse
+from app.routes import health, stocks, fundamental, banking_data, screening, governance, valuation, sectors, sources, analyst_consensus, documents, company_summary, yfinance_extended, segments, market_movers, broker_reports, brands, concall, premium, history_charts, pl_intelligence, balance_sheet_intelligence, cash_flow_intelligence, quarterly_intelligence, bank_roe, company_scores, quick_scores, ipo_issues, bie, prices, framework, portfolio, nse, macro
 from app.mcp.server import mcp_asgi_app, mcp_server
 from app.infrastructure.database.client import close_database
 from app.infrastructure.redis.client import close_redis
@@ -18,7 +18,7 @@ from app.technical.shared.errors import AppError
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     register_technical_agents()
-    logger.info("Fundamental Screener API started", port=config.api_port, env=config.node_env)
+    logger.info("Kishore Stock Screener API started", port=config.api_port, env=config.node_env)
     # The MCP session manager runs its own task group for the life of the
     # process — app.mount() does NOT auto-start a mounted sub-app's lifespan,
     # so without this every MCP request fails with "Task group is not
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Fundamental Screener API",
+    title="Kishore Stock Screener API",
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -106,6 +106,7 @@ app.include_router(prices.router)
 app.include_router(framework.router)
 app.include_router(portfolio.router)
 app.include_router(nse.router)
+app.include_router(macro.router)
 app.include_router(technical_router)
 
 # Architecture v2 Stage 1: MCP interface layer, mounted here rather than run

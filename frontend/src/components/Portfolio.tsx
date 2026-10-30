@@ -22,8 +22,8 @@ export interface PortfolioResponse {
   sectors?: { sector: string; value: number; pct_of_equity: number | null; over_limit: boolean }[];
   holdings: Holding[];
   risk?: { volatility_pct?: number; max_fall_1y_pct?: number; return_1y_pct?: number; within_drawdown_tolerance?: boolean; basis?: string; reason?: string };
-  candidates?: (Scores & { symbol: string; company_name: string; sector: string; classification: string; action: string; size: string | null;
-    vs_weakest_holding_in_sector: { holding: string; clearly_better: boolean; why: string } | null })[];
+  candidates?: (Scores & { symbol: string; company_name: string; sector: string; basic_industry: string | null; classification: string; action: string; size: string | null;
+    vs_weakest_holding_in_industry: { holding: string; clearly_better: boolean; why: string } | null })[];
   settings: { max_stock_pct: number; max_sector_pct: number; drawdown_tolerance_pct: number; targets: Record<string, number> };
 }
 
@@ -44,9 +44,13 @@ export default function Portfolio() {
   const [manual, setManual] = useState({ name: "", asset_class: "GOLD", value: "" });
   const [csvSource, setCsvSource] = useState("DHAN_CSV");
   const [settings, setSettings] = useState<PortfolioResponse["settings"] | null>(null);
+  const [brokers, setBrokers] = useState<{ broker: string; label: string; configured: boolean; env: string }[]>([]);
 
   const load = () => api.getPortfolio().then((r) => { setData(r); setSettings(r.settings); }).catch((e) => setMsg(String(e)));
-  useEffect(() => { load(); api.kiteStatus().then(setKite).catch(() => setKite({ connected: false, user: null })); }, []);
+  useEffect(() => {
+    load(); api.kiteStatus().then(setKite).catch(() => setKite({ connected: false, user: null }));
+    api.brokers().then(setBrokers).catch(() => setBrokers([]));
+  }, []);
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true); setMsg(label);
@@ -69,9 +73,10 @@ export default function Portfolio() {
         <p className="eyebrow">Portfolio</p>
         <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Is it better than what you already own?</h1>
         <p className="text-sm max-w-3xl" style={{ color: "var(--text-secondary)" }}>
-          Every holding is set against the best same-sector stock that passes the quality gate, sized within your limits,
+          Every holding is set against the best stock in its basic industry that passes the quality gate, sized within your limits,
           and the whole portfolio checked against your asset-allocation targets and drawdown tolerance. Holdings are read
-          from Kite (read only — this app never places orders), a broker CSV, or entered by hand.
+          from Kite, Dhan, Upstox or Groww (read only — this app never places orders), a broker CSV, or entered by hand.
+          Funds are valued and classed by ISIN from AMFI's daily NAV file.
         </p>
         <div className="flex flex-wrap items-center gap-3 mt-4 text-sm">
           <span style={{ color: kite?.connected ? "#4fb3a0" : "var(--text-dim)" }}>
@@ -80,9 +85,17 @@ export default function Portfolio() {
           <button disabled={busy} onClick={connect} className="px-3 py-1.5 rounded-lg text-xs" style={box}>Connect Kite</button>
           <button disabled={busy} onClick={() => run("Syncing from Kite", async () => {
             const r = await api.kiteSync(); return `Read ${r.rows} rows from Kite`; })} className="px-3 py-1.5 rounded-lg text-xs" style={box}>Sync from Kite</button>
-          <button disabled={busy} title="Latest NSE closing price for every listed stock held (for CSV and hand-entered holdings)"
-                  onClick={() => run("Refreshing prices from NSE", async () => { const r = await api.repricePortfolio(); return `Repriced ${r.updated} of ${r.of} holdings at NSE's ${r.price_date ?? "latest"} close`; })}
-                  className="px-3 py-1.5 rounded-lg text-xs" style={box}>Refresh prices (NSE)</button>
+          {brokers.map((b) => (
+            <button key={b.broker} disabled={busy || !b.configured}
+                    title={b.configured ? `Read ${b.label} holdings (read only)` : `Set ${b.env} in backend/.env to enable`}
+                    onClick={() => run(`Syncing from ${b.label}`, async () => {
+                      const r = await api.brokerSync(b.broker);
+                      return `Read ${r.rows} rows from ${b.label} (${r.matched_stocks} matched to listed stocks${r.no_price.length ? `; no price for ${r.no_price.join(", ")}` : ""})`; })}
+                    className="px-3 py-1.5 rounded-lg text-xs" style={{ ...box, opacity: b.configured ? 1 : 0.5 }}>Sync from {b.label}</button>
+          ))}
+          <button disabled={busy} title="Latest NSE close for every listed stock held and the latest AMFI NAV for every fund held"
+                  onClick={() => run("Refreshing prices from NSE and AMFI", async () => { const r = await api.repricePortfolio(); return `Repriced ${r.updated} of ${r.of} holdings at NSE's ${r.price_date ?? "latest"} close${r.nav_date ? ` and AMFI's ${r.nav_date} NAV` : ""}`; })}
+                  className="px-3 py-1.5 rounded-lg text-xs" style={box}>Refresh prices (NSE + AMFI)</button>
           <label className="px-3 py-1.5 rounded-lg text-xs cursor-pointer" style={box}>
             Upload holdings CSV
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => {
@@ -234,10 +247,10 @@ export default function Portfolio() {
               <table className="w-full text-xs"><tbody>
                 {data.candidates.map((c) => (
                   <tr key={c.symbol} style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                    <td className="py-1.5 px-2"><b style={{ color: "var(--text-primary)" }}>{c.symbol}</b> <span style={{ color: "var(--text-dim)" }}>{c.sector}</span></td>
+                    <td className="py-1.5 px-2"><b style={{ color: "var(--text-primary)" }}>{c.symbol}</b> <span style={{ color: "var(--text-dim)" }}>{c.basic_industry ?? c.sector}</span></td>
                     <td className="py-1.5 px-2">{c.classification} · {c.action.toLowerCase()}{c.size && c.size !== "None" ? ` · ${c.size.toLowerCase()}` : ""}</td>
                     <td className="py-1.5 px-2 tabular-nums">Quality {fmt(c.quality)} · RS {fmt(c.relative_strength, 0)} · technical {fmt(c.technical, 0)} · valuation {fmt(c.valuation, 0)}</td>
-                    <td className="py-1.5 px-2" style={{ color: "var(--text-secondary)" }}>{c.vs_weakest_holding_in_sector ? `vs your ${c.vs_weakest_holding_in_sector.holding}: ${c.vs_weakest_holding_in_sector.why}` : "a sector you do not own"}</td>
+                    <td className="py-1.5 px-2" style={{ color: "var(--text-secondary)" }}>{c.vs_weakest_holding_in_industry ? `vs your ${c.vs_weakest_holding_in_industry.holding}: ${c.vs_weakest_holding_in_industry.why}` : `no holding in ${c.basic_industry ?? "this industry"}`}</td>
                   </tr>))}
               </tbody></table>
             </div>

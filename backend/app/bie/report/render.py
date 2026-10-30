@@ -18,7 +18,7 @@ _FONT = _HERE.parent.parent / "reporting" / "fonts" / "Fraunces-Variable.ttf"
 _FOOTER = """
 <div style="font-size:8px; width:100%; padding:0 16mm; color:#8d9994; font-family:Inter,sans-serif;
             display:flex; justify-content:space-between;">
-  <span>Fundamental Research · Deep report · __NAME__</span>
+  <span>Kishore Stock Screener · Deep report · __NAME__</span>
   <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>"""
 

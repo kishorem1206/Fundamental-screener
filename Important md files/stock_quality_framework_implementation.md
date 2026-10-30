@@ -112,8 +112,14 @@ guidance tracker. Code: `backend/app/framework/business_quality.py`.
 | Promoter behaviour | 15% (15%) | Change in promoter holding over three years (Screener), less twice the NSE pledge / promoter-selling penalty where NSE data has been read. Not scored for widely held companies with no promoter |
 | Management credibility | 10% (10%) | Share of tracked guidance kept or raised rather than cut (concall analysis; only where it has run) |
 
+**Regulatory record** (added 2026-10-30, Phase A of the data-sources plan): SEBI
+orders against the company over the last three years take up to 20 points off
+the Business Quality score — a deduction, not a weighted part, so a clean
+record changes nothing. See "Risk: SEBI orders and credit ratings" below.
+
 Not measured anywhere, and shown as such: brand strength, customer
-concentration, industry structure, regulatory risk. They are never guessed.
+concentration, industry structure. Regulatory risk is listed as not measured
+only while SEBI's orders have not been read. They are never guessed.
 The "special situational logic" (a stock holding up while its sector is weak)
 needs relative strength and arrives with phase 6.
 
@@ -122,8 +128,9 @@ needs relative strength and arrives with phase 6.
     Quality = 70% Fundamental Score + 30% Business Quality      (user's choice, 2026-10-06)
 
 - Business Quality not measurable: Quality = Fundamental, and the formula says so.
-- **Governance cap:** promoter pledge above 10% of the promoter holding, or an
-  NSE governance penalty of 10 points or more, caps Quality at 49, so the
+- **Governance cap:** promoter pledge above 10% of the promoter holding, an
+  NSE governance penalty of 10 points or more, or a serious SEBI order against
+  the company in the last two years, caps Quality at 49, so the
   company cannot pass the core gate of 50 (section 17).
 - Bands: 65+ strong (preferred), 50–64 good (investable gate), 40–49
   borderline (watch), below 40 weak, below 30 very weak.
@@ -426,7 +433,8 @@ page in the combined file.
 
 Not measured anywhere (no source across the universe), and said so where they
 would appear: earnings revisions, brand strength, customer concentration,
-industry structure, regulatory risk.
+industry structure. (Regulatory risk is measured from SEBI's orders since
+2026-10-30.)
 
 ## NSE's MCP servers as a data source (2026-10-06)
 
@@ -511,3 +519,213 @@ Note on double counting (framework section 18): direction now also touches the
 Fundamental Score through this category, alongside the Quantitative Score's
 return and margin change. This was chosen knowingly so the older Composite
 Score stops rating a deteriorating business as if nothing had changed.
+
+
+## Risk: SEBI orders and credit ratings (Phase A, 2026-10-30)
+
+Code: `backend/app/risk/`. Tables: `sebi_orders`, `sebi_order_matches`,
+`credit_ratings` (migration 0043).
+
+**SEBI orders.** Source: sebi.gov.in → Enforcement → Orders, read through the
+listing page's own AJAX call (25 orders a page, newest first; it answers only
+inside the listing page's session). Read back to October 2021: 7,874 orders,
+with 360 listed companies named at least once.
+Titles are matched to companies by our name and NSE's official name
+(EQUITY_L.csv), conservatively (`risk/names.py`): one- and two-word names must
+read "X Limited/Ltd" after a joining word, the longer of two overlapping names
+wins, "X Group companies" names every stock starting with X. Each match has a
+role:
+
+| Role | Title shape | Effect |
+|---|---|---|
+| NAMED | "in the matter of X Limited", "in respect of X Limited" | can be serious |
+| GROUP | "in the matter of X Group companies" | as NAMED |
+| MATTER | "in respect of Mr Y in the matter of X Limited" (others are the noticees) | small, capped |
+| SCRIP | "trading in the scrip of X", "options at the BSE" (the company's shares or the exchange are the venue) | shown only |
+
+Orders that name a company and can be adverse (FINAL, INTERIM, ORDER,
+ADJUDICATION) are opened, because a title alone cannot say whether a case ended
+in a penalty or was closed. The last six pages of the PDF are read, after
+removing two things that otherwise give wrong answers: the running footer
+(every page repeats the title, so the company's name is always "present") and
+the recital (which quotes earlier orders and other authorities' penalties).
+Long orders end in annexures, so the pages are read backwards to the last page
+that decides something, and the six pages ending there are kept. Outcome:
+DIRECTIONS (restraint, debarment), DISGORGEMENT (money given up, refunded or
+impounded), COMPLIANCE (directions to do something, no restraint), PENALTY (with
+the largest amount), DISPOSED, UNKNOWN (14 of 231, including preliminary-issue
+orders that decide nothing yet).
+
+| Grade | Rule | Points off Business Quality |
+|---|---|---|
+| SERIOUS | whole-time member / quasi-judicial order in the company's own matter with restraint directions (on the company or those running it), or disgorgement or a penalty of ₹1 crore or more on the company itself | 15, and a red flag if within 24 months |
+| PENALTY | a smaller penalty on the company, or directions to comply | 6 |
+| MATTER | directions or penalties on others in the company's matter | 4 (8 at most in all) |
+| SETTLED | settlement order | 3 (6 at most in all) |
+| NOTE | scrip trading, exemption, revocation, recovery, court, disposed, unread | 0 |
+
+Deduction at most 20. A SERIOUS order within two years caps Quality at 49 and
+fails the core gate ("governance: SEBI order …").
+
+**Credit ratings** (report only: user's decision, 2026-10-30). Source: NSE
+corporate announcements with subject "Credit Rating"; one query covers every
+company for a month. The announcement carries only a generic line, so the rating
+is read from the company's own letter (PDF, first four pages) by
+`risk/rating_text.py`: agency (from the rating's prefix), long- and short-term
+rating on the Indian scale, outlook or rating watch, action, previous rating,
+instrument, rationale link. The action is read from the cover letter only,
+because the agency rationale often attached after it contains "factors that could
+lead to a downgrade". On the first fill 1,862 of 2,157 letters were read (86%);
+ESG ratings, international agencies and scanned letters are stored unread. Letters
+were read back 15 months.
+
+**Credit ratings feed no score, gate, flag or classification.** They appear in
+one place: section 06 of the Editorial Report (and so the integrated PDF),
+as a table of what each agency says with links to the filing and rationale. A
+test (`test_only_the_sebi_record_can_fail_the_gate`) holds this.
+
+First fill, 2026-10-30: 12 stocks carry a SEBI red flag. Every flagged order was
+checked by hand against its PDF; the parsers' tests record what those checks found.
+
+**When it applies.** SEBI red flags are read fresh at every decision
+(`decisions._apply` puts the current record in `detail.risk`), so a new order
+changes the classification the next time decisions are refreshed — no
+re-scoring. The Business Quality deduction and the Quality cap apply when a stock
+is next scored. The stock detail on the Combined Score page shows the record with
+links to each order.
+
+    cd backend
+    .venv/bin/python -m app.risk.runner --sebi --read-orders      # new orders since the last run, then read them
+    .venv/bin/python -m app.risk.runner --credit --months 2       # recent rating letters
+    .venv/bin/python -m app.risk.runner --refresh-decisions       # re-apply classifications with current flags
+
+## Portfolio sources (Phase B, 2026-10-30)
+
+**AMFI NAV** (`backend/app/portfolio/amfi.py`, table `amfi_navs`, migration
+0044): AMFI's daily `NAVAll.txt` (about 18,000 ISINs). A fund or ETF held is
+looked up by ISIN; its asset class comes from AMFI's scheme category (gold and
+silver → GOLD, overseas → INTERNATIONAL, debt / liquid / gilt / arbitrage /
+conservative hybrid → DEBT, equity and other hybrids → EQUITY_FUND); only
+headings that do not say (index funds, other ETFs, domestic fund of funds) fall
+back to the name. A fund with no broker price is valued at its NAV. Kite syncs,
+broker syncs and "Refresh prices" refresh the file when it is a day old.
+
+**Broker holdings** (`backend/app/portfolio/brokers.py`), read only, holdings
+endpoint only, token from `backend/.env`:
+
+| Broker | Endpoint | Token |
+|---|---|---|
+| Dhan | `GET https://api.dhan.co/v2/holdings` (no price: valued at the stored close) | `DHAN_ACCESS_TOKEN` |
+| Upstox | `GET https://api.upstox.com/v2/portfolio/long-term-holdings` | `UPSTOX_ACCESS_TOKEN` |
+| Groww | `GET https://api.groww.in/v1/holdings/user` (paid trade API; no price) | `GROWW_ACCESS_TOKEN` |
+
+Portfolio page: a "Sync from …" button per broker, greyed out until its token
+is set. Not tested against live accounts (no keys here); the parsers are tested
+on the documented response shapes.
+
+
+## Market & Macro and FPI flows (Phases C and D, 2026-10-30)
+
+Context for reading the market. **Nothing here feeds a score, gate or
+classification** (`test_flows_do_not_reach_any_score`). Code: `backend/app/macro/`;
+page: `frontend/src/components/MacroPage.tsx`; tables `macro_points`,
+`fpi_sector_flows` (migration 0046). The catalogue of series with labels, units
+and sources is `macro/catalogue.py`.
+
+| Series | Source | Note |
+|---|---|---|
+| GDP, IIP, CPI, WPI, FX reserves | MoSPI MCP, `mcp.mospi.gov.in` (no key) | CPI and IIP growth as published; GDP and WPI growth computed year on year. All India is state 99 in CPI's 2012 base and 1 in the 2024 base. FX reserves lag: the feed stops at June 2025 and the tile says so |
+| Repo, SDF, MSF, CRR, SLR, call rate, 10-year G-sec, rupee | RBI home page, "Current Rates" | RBI shows only today, so these build up from 2026-10-30 |
+| Yield curve | CCIL, through `bie/macro.py` | Already the deep report's risk-free rate (9Y-10Y bucket); plan item 6 needed no change |
+| Nifty P/E, P/B, yield, India VIX | NSE index file, already stored | |
+| CBOE VIX | CBOE CSV | |
+| US 10-year, dollar index, Brent, gold | Yahoo | FRED's key-free CSV times out; its API needs a key |
+| Long-run growth and inflation | World Bank; IMF projections from `bie/macro.py` | |
+| FPI daily and monthly | NSDL `Monthly.aspx`, `Yearwise.aspx?RptType=6` | Daily: this month; monthly from January 2022 |
+| FPI by sector | NSDL fortnightly static files, from August 2024 | Sector names match `stocks.sector`. "Consumer Cyclical" and "Other" have no NSDL row |
+
+**Not available:** bank credit growth. RBI's DBIE has no feed this app can read,
+and MoSPI's RBI dataset covers only the external sector.
+
+**Sector flow:** net FPI equity investment over the last six fortnights (about
+three months) as a share of FPI holdings in the sector, ranked. Shown on the Macro
+page and on the opened stock next to Relative Strength; not scored, because
+whether it predicts anything has not been tested.
+
+    cd backend
+    .venv/bin/python -m app.macro.runner              # daily
+    .venv/bin/python -m app.macro.runner --history    # first fill
+
+
+## Peers are like for like (2026-10-30, user's decisions)
+
+Every comparison with "similar stocks" uses the **basic industry**. Where that has
+too few stocks, **rank and Relative Strength fall back to the industry level**; the
+broad sector is never used for a comparison (it put a shipbuilder against a
+steel-tube maker). NSE's hierarchy is strictly nested, so a fallback never crosses
+a sector.
+
+| Comparison | Peers | Too few |
+|---|---|---|
+| Quality rank, the top-40% test (`sector_rank.py`) | basic industry with 5+ scored stocks, else industry | no rank (19 stocks) |
+| Relative Strength peer percentile and peer median | basic industry with 5+ others with prices, else industry | part left out |
+| Best alternative, "vs your holding" | basic industry only | "no holding in this industry": an industry-level match can again pair unrelated businesses |
+
+Of 2,624 stocks 2,454 rank in their basic industry, 151 in their industry, 19 not at
+all. Sector limits stay at sector level, because they are about concentration. The
+"vs sector" Relative Strength part still uses NSE's sector index where one exists.
+`scripts/recompute_relative_strength.py` recomputes that one score from stored prices.
+
+## Phase E: Open in (2026-10-30)
+
+A bar on every opened stock (`OpenInBar` in `CombinedScore.tsx`): Screener, NSE,
+TradingView, Chartink, Trendlyne and MarketsMojo by direct address; BSE, Tickertape,
+Moneycontrol and Tijori through a site-limited search, because their addresses need
+an internal ID. MCA is left out: it blocks deep links.
+
+**The cross-check column was not built.** Tickertape's scorecard API is unofficial and
+its scores are locked behind its paid plan; Trendlyne's DVM needs its paid MCP. Reading
+a paid score by polling an unofficial API across the universe is not something to
+build on. With a Trendlyne subscription the same column could be added properly.
+
+## Phase F: earnings revisions (2026-10-30)
+
+`ingestion/estimate_revisions_client.py`, table `estimate_snapshots` (migration 0047).
+Yahoo gives each consensus estimate as it stood 30 and 90 days ago, so revisions are
+measurable at once rather than after months of our own snapshots; a dated snapshot is
+kept each run anyway. Next year's estimate is read first (the current year goes blank
+when a year rolls), a 0 counts as missing, and a move above 60% is left out as a split
+or base reset.
+
+**Earnings revisions are not in any score** (user's decision, 2026-10-30: they are
+analysts' opinions, and external opinion does not enter a score here). They stay
+"not measured" in the Quantitative Score. The stock page shows a context line: the
+consensus EPS, its 90-day change, raised and cut counts, and the number of analysts.
+First read: 865 stocks with estimates, 629 of them with three or more analysts.
+
+    cd backend
+    .venv/bin/python -m app.ingestion.estimate_revisions_client   # weekly
+
+## Phase G: news breadth (2026-10-30)
+
+`ingestion/news_feeds.py`, table `market_news`, run by the macro runner. Economic Times
+and Mint RSS. A headline naming a listed company also gets a `company_news` row, so it
+reaches the News tab and the report; the latest 15 show on the Market & Macro page.
+Moneycontrol's RSS stopped in April 2024 and PIB's serve Hindi titles, so neither is
+read. Feeds hold about a day, so the runner must run at least daily. Headlines feed no
+score.
+
+
+## Scheduled runs (2026-10-30)
+
+Two `launchd` jobs, in `backend/scripts/scheduled/`:
+
+| Job | When | Does |
+|---|---|---|
+| Daily | 20:30 every day | prices, then `app.macro.runner` (macro, FPI, news) |
+| Weekly | Sunday 09:00 | SEBI orders, rating letters, decisions, estimates |
+
+The project lives in `~/Downloads`, which macOS protects: a plain `launchd` shell job
+fails with "can't open input file". So each job runs through a small app in
+`~/Applications` (Screener Daily, Screener Weekly), which macOS asks once for access to
+Downloads. Rebuilding an app makes it ask again.

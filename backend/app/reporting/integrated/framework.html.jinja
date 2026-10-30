@@ -30,7 +30,7 @@ section { break-inside: avoid; page-break-inside: avoid; }
     <div class="chips">
       <span>Quality {{ "%.1f"|format(v.quality) if v.quality is not none else "—" }} ({{ band(v.quality) }})</span>
       {% if momentum.direction %}<span>Quality momentum: {{ momentum.direction | lower | replace("_", " ") }}</span>{% endif %}
-      {% if rank %}<span>#{{ rank.rank }} of {{ rank.of }} in {{ rank.sector }} ({{ rank.label }})</span>{% endif %}
+      {% if rank %}<span>#{{ rank.rank }} of {{ rank.of }} in {{ rank.group }} ({{ rank.label }})</span>{% endif %}
       {% if v.valuation_view %}<span>Valuation: {{ v.valuation_view | lower }}</span>{% endif %}
       {% if v.trend %}<span>Business trend: {{ v.trend | lower | replace("_", " ") }}</span>{% endif %}
     </div>
@@ -45,7 +45,7 @@ section { break-inside: avoid; page-break-inside: avoid; }
       <td>{{ ("page " ~ c.page) if c.page else "not included" }}</td></tr>{% endfor %}
     </table>
   </div>
-  <div class="foot"><span>Scores as of {{ row.as_of }} · {{ "full analysis" if row.basis == "FULL" else "quick analysis, Screener first" }}</span><span>Equity Research</span></div>
+  <div class="foot"><span>Scores as of {{ row.as_of }} · {{ "full analysis" if row.basis == "FULL" else "quick analysis, Screener first" }}</span><span>Kishore Stock Screener</span></div>
 </div>
 
 <div class="part">
@@ -87,9 +87,9 @@ section { break-inside: avoid; page-break-inside: avoid; }
 <section>
   <h2>Relative comparison</h2>
   <dl class="kv">
-    <dt>Sector rank (Quality)</dt><dd>{% if rank %}#{{ rank.rank }} of {{ rank.of }} in {{ rank.sector }} — {{ rank.label }}{% else %}—{% endif %}</dd>
+    <dt>Rank among peers (Quality)</dt><dd>{% if rank %}#{{ rank.rank }} of {{ rank.of }} in {{ rank.group }} — {{ rank.label }}{% else %}—{% endif %}</dd>
     <dt>Quality momentum</dt><dd>{% if momentum.direction %}{{ momentum.direction | lower | replace("_", " ") }}{% for h in ["6m", "12m"] %}{% if momentum[h] and momentum[h].quality is not none %}; {{ h }} ago {{ "%.1f"|format(momentum[h].quality) }} ({{ "%+.1f"|format(momentum[h].change) }} since, {{ momentum[h].method }}){% endif %}{% endfor %}{% else %}—{% endif %}</dd>
-    <dt>Best same-sector alternative</dt><dd>{% if alt %}{{ alt.symbol }} — {{ alt.classification }}, {{ alt.action | lower }}, Quality {{ "%.1f"|format(alt.quality) if alt.quality is not none else "—" }}{% else %}none passing the core gate{% endif %}</dd>
+    <dt>Best alternative in the same basic industry</dt><dd>{% if alt %}{{ alt.symbol }} — {{ alt.classification }}, {{ alt.action | lower }}, Quality {{ "%.1f"|format(alt.quality) if alt.quality is not none else "—" }}{% else %}none passing the core gate{% endif %}</dd>
     <dt>In your portfolio</dt><dd>{% if held %}held, ₹{{ "{:,.0f}".format(held) }}{% else %}not held{% endif %}</dd>
   </dl>
   {% if replacement %}

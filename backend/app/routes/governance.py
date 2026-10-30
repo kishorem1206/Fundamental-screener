@@ -48,6 +48,18 @@ def _event_to_dict(row: GovernanceEvent) -> dict:
     }
 
 
+@router.get("/{company_id:path}/credit-ratings")
+def get_credit_ratings(company_id: str):
+    """What the rating agencies say, for the full analysis report. Never used in any score."""
+    from app.risk.record import credit_for_stock
+
+    db = get_db()
+    try:
+        return credit_for_stock(db, company_id)
+    finally:
+        db.close()
+
+
 @router.get("/{company_id:path}/shareholding")
 def get_shareholding_history(company_id: str):
     """Promoter/public/pledge % history, newest period first."""

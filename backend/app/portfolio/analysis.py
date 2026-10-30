@@ -2,8 +2,9 @@
 compare with what is owned, size the position, check sector allocation, check
 total asset allocation, then give the final action.
 
-  Section 12  every stock held is set against the best same-sector stock that
-              passes the core gate. "Better company" (Quality) and "better
+  Section 12  every stock held is set against the best stock in its basic
+              industry (like for like, not the broad sector) that passes the
+              core gate. "Better company" (Quality) and "better
               current opportunity" (readiness to buy, relative strength,
               technicals, valuation) are reported separately; a replacement is
               suggested only when the candidate is clearly better.
@@ -225,7 +226,7 @@ def _stock_view(db, h, stock, out, cfg, sector_pct, rets, weights, equity_book, 
         notes.append(f"position is {float(h.value) / turnover:.0%} of a typical day's traded value: slow to exit")
 
     alt = best_alternative(db, stock, h.stock_id)
-    better, why_better = (clearly_better(v, row.classification, alt) if alt else (False, "no same-sector stock passes the core gate"))
+    better, why_better = (clearly_better(v, row.classification, alt) if alt else (False, "no stock in the same basic industry passes the core gate"))
     comparison = None
     if alt:
         comparison = {"candidate": alt["symbol"], "candidate_name": alt["company_name"], "candidate_classification": alt["classification"],
@@ -240,9 +241,9 @@ def _stock_view(db, h, stock, out, cfg, sector_pct, rets, weights, equity_book, 
         if better:
             action, reason = "Replace", f"replace with {alt['symbol']}: {why_better}"
         elif row.classification == "Avoid":
-            action, reason = "Reduce", "fails the quality gate and is declining; no clearly better same-sector replacement found"
+            action, reason = "Reduce", "fails the quality gate and is declining; no clearly better replacement in its industry found"
         else:
-            action, reason = "Watch", "below the gate, but no clearly better same-sector replacement: keep and watch"
+            action, reason = "Watch", "below the gate, but no clearly better replacement in its industry: keep and watch"
     elif weight > cfg["max_stock_pct"]:
         action, reason = "Reduce", f"{weight:.1f}% of the equity book is above the {cfg['max_stock_pct']:.0f}% limit per stock"
     elif action in ("Add gradually", "Add on confirmation"):
@@ -251,7 +252,7 @@ def _stock_view(db, h, stock, out, cfg, sector_pct, rets, weights, equity_book, 
         elif sector_pct.get(sector, 0) >= cfg["max_sector_pct"]:
             action, reason = "Hold", f"{sector} is already {sector_pct[sector]:.0f}% of the equity book (limit {cfg['max_sector_pct']:.0f}%)"
         elif better:
-            reason += f"; {alt['symbol']} is the better opportunity in the sector for new money"
+            reason += f"; {alt['symbol']} is the better opportunity in its industry for new money"
     add_value = None
     if action in ("Add gradually", "Add on confirmation") and band and equity_book:
         add_value = round(max(0.0, (band[0] + band[1]) / 2 - weight) / 100 * equity_book, 0)
@@ -270,7 +271,8 @@ def _stock_view(db, h, stock, out, cfg, sector_pct, rets, weights, equity_book, 
 def candidates(db: Session, holdings: list[PortfolioHolding], cfg: dict, sector_pct: dict, limit: int = 12) -> list[dict]:
     """Stocks not owned that pass the core gate and are ready to buy, outside
     sectors already at the limit — each set against the weakest holding in
-    its sector, if any (section 12: is it better than what I already own?)."""
+    its basic industry, if any (section 12: is it better than what I already
+    own?). The limits stay on the sector: they are about concentration."""
     owned = {h.stock_id for h in holdings if h.stock_id}
     held_rows = {sid: store.latest(db, sid) for sid in owned}
     rows = (db.query(FrameworkScore, Stock).join(Stock, Stock.id == FrameworkScore.stock_id)
@@ -288,15 +290,17 @@ def candidates(db: Session, holdings: list[PortfolioHolding], cfg: dict, sector_
             continue  # sector already at its limit, or three candidates from it already listed
         per_sector[s.sector] = per_sector.get(s.sector, 0) + 1
         v = values(r)
-        same = [(sid, hr) for sid, hr in held_rows.items() if hr is not None and (db.get(Stock, sid).sector == s.sector)]
+        same = [(sid, hr) for sid, hr in held_rows.items()
+                if hr is not None and s.basic_industry and db.get(Stock, sid).basic_industry == s.basic_industry]
         vs = None
         if same:
             weakest_id, weakest = min(same, key=lambda x: float(x[1].quality or 0))
             ok, why = clearly_better(values(weakest), weakest.classification, {**v, "classification": r.classification})
             vs = {"holding": db.get(Stock, weakest_id).symbol, "clearly_better": ok, "why": why}
-        out.append({"symbol": s.symbol, "company_name": s.company_name, "sector": s.sector, "classification": r.classification,
+        out.append({"symbol": s.symbol, "company_name": s.company_name, "sector": s.sector, "basic_industry": s.basic_industry,
+                    "classification": r.classification,
                     "action": r.action, "size": ((r.detail or {}).get("decision") or {}).get("size"), **v,
-                    "sector_pct_of_equity": sector_pct.get(s.sector or ""), "vs_weakest_holding_in_sector": vs})
+                    "sector_pct_of_equity": sector_pct.get(s.sector or ""), "vs_weakest_holding_in_industry": vs})
         if len(out) >= limit:
             break
     return out

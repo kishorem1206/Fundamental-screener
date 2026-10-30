@@ -60,6 +60,10 @@ def gates(s: dict, detail: dict, rank: dict | None) -> dict:
     gov = (detail.get("quality") or {}).get("governance_red_flag")
     if gov:
         flags.append(f"governance: {gov}")
+    risk = detail.get("risk") or {}
+    regulatory = (risk.get("regulatory") or {}).get("red_flag")
+    if regulatory and regulatory != gov:  # current SEBI record, before the stock is next scored
+        flags.append(f"governance: {regulatory}")
     bs = _component(detail, "fundamental", "balance_sheet")
     if bs is not None and bs < _BALANCE_SHEET_FLOOR:
         flags.append(f"balance sheet weak (score {bs:.0f})")
@@ -131,7 +135,7 @@ def decide(s: dict, detail: dict, rank: dict | None) -> dict:
             why.append("priority candidate" if matrix.startswith("Strong") else
                        "high-conviction candidate" if move == "IMPROVING" else "core quality at a reasonable price")
         if not g["preferred"] and cls == "Core Quality":
-            why.append("not in the top 40% of its sector" if g["top_40_in_sector"] is False else "below the preferred-core bar")
+            why.append(f"not in the top 40% of {rank['group']}" if g["top_40_in_sector"] is False else "below the preferred-core bar")
     elif q >= 50 and g["core"]:
         cls = "Investable"
         if move == "IMPROVING":

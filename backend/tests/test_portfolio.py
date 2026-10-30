@@ -77,3 +77,39 @@ def test_analysis_of_a_sample_portfolio(db):
     # ITC is 23% of the equity book here: above the default 10% per-stock limit
     assert stocks["ITC"]["pct_of_equity"] > 10 and stocks["ITC"]["final_action"] == "Reduce"
     assert "volatility_pct" in out["risk"] or "reason" in out["risk"]
+
+
+def test_alternatives_are_like_for_like_not_just_the_same_sector(monkeypatch):
+    """A shipbuilder must not be compared with a defence maker because both are Capital Goods."""
+    from types import SimpleNamespace as NS
+
+    from app.framework import decisions
+
+    industries = {"SHIP": "Ship Building & Allied Services", "SHIP2": "Ship Building & Allied Services", "DEFENCE": "Aerospace & Defense"}
+
+    class Query:
+        def filter(self, *a):
+            return self
+
+        def __iter__(self):
+            return iter([(s,) for s in self.ids])
+
+    class Db:
+        def query(self, *a):
+            q = Query()
+            q.ids = [s for s, b in industries.items() if b == ship.basic_industry]
+            return q
+
+        def get(self, model, sid):
+            return NS(symbol=sid, company_name=sid)
+
+    def row(sid, q):
+        return NS(stock_id=sid, quality=q, classification="Core Quality", action="Add gradually")
+
+    ship = NS(sector="Capital Goods", basic_industry=industries["SHIP"])
+    monkeypatch.setattr(decisions, "values", lambda r: {"quality": r.quality})
+    monkeypatch.setattr(decisions, "_sector_latest", lambda db, sector: [row("DEFENCE", 95.0), row("SHIP2", 60.0), row("SHIP", 50.0)])
+    assert decisions.best_alternative(Db(), ship, "SHIP")["symbol"] == "SHIP2"  # not the higher-quality DEFENCE
+    monkeypatch.setattr(decisions, "_sector_latest", lambda db, sector: [row("DEFENCE", 95.0), row("SHIP", 50.0)])
+    assert decisions.best_alternative(Db(), ship, "SHIP") is None  # nothing like it: no alternative, not a wrong one
+    assert decisions.best_alternative(Db(), NS(sector="Capital Goods", basic_industry=None), "SHIP") is None

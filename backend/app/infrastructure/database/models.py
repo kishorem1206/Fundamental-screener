@@ -1725,3 +1725,171 @@ class NseCorporateAction(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (PrimaryKeyConstraint("stock_id", "ex_date", "purpose"),)
+
+
+# ── Risk: regulatory record and credit ratings (app/risk/) ──────────────────
+
+class SebiOrder(Base):
+    """One order from SEBI's enforcement listing (sebi.gov.in → Enforcement →
+    Orders), exactly as SEBI titles it. `kind` is read from the title
+    (FINAL / INTERIM / ORDER / ADJUDICATION / SETTLEMENT / EXEMPTION /
+    REVOCATION / CORRIGENDUM / RECOVERY / COURT / RTI_APPEAL / OTHER).
+    `outcome` is read from the operative part of the order itself — only for
+    orders that name a listed company — DIRECTIONS (restraint, debarment,
+    disgorgement) / COMPLIANCE (directions to do something) / PENALTY /
+    DISPOSED / UNKNOWN. `penalty_rs`: the largest amount in that part."""
+
+    __tablename__ = "sebi_orders"
+
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    order_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    pdf_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+    outcome_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    penalty_rs: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SebiOrderMatch(Base):
+    """A listed company named in a SEBI order's title. `role`: NAMED (the
+    company is the matter), GROUP ("in the matter of X Group companies"),
+    MATTER (the order is against others in the company's matter), SCRIP
+    (trading in the company's shares — the company is the venue, not the
+    party). `company_in_operative`: the company's own name appears in the
+    order's directions or penalty part, the running page footer removed
+    (None until the order is read)."""
+
+    __tablename__ = "sebi_order_matches"
+
+    order_url: Mapped[str] = mapped_column(String, ForeignKey("sebi_orders.url", ondelete="CASCADE"), nullable=False)
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    matched_name: Mapped[str] = mapped_column(String, nullable=False)
+    company_in_operative: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    __table_args__ = (PrimaryKeyConstraint("order_url", "stock_id"),)
+
+
+class CreditRating(Base):
+    """A credit rating letter a company filed with NSE (announcement subject
+    "Credit Rating"), read by app/risk/rating_text.py. `parsed` is False when
+    no rating on the Indian scale could be found in the letter; such a row is
+    shown (with its filing link) but never used for a flag."""
+
+    __tablename__ = "credit_ratings"
+
+    filing_url: Mapped[str] = mapped_column(String, primary_key=True)
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False, index=True)
+    announced_on: Mapped[date] = mapped_column(Date, nullable=False)
+    agency: Mapped[str | None] = mapped_column(String, nullable=True)
+    instrument: Mapped[str | None] = mapped_column(String, nullable=True)
+    rating: Mapped[str | None] = mapped_column(String, nullable=True)
+    short_term: Mapped[str | None] = mapped_column(String, nullable=True)
+    outlook: Mapped[str | None] = mapped_column(String, nullable=True)
+    action: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_rating: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_outlook: Mapped[str | None] = mapped_column(String, nullable=True)
+    rationale_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ── Portfolio: AMFI scheme NAVs (app/portfolio/amfi.py) ──────────────────────
+
+class AmfiNav(Base):
+    """One ISIN from AMFI's daily NAVAll.txt (every open- and close-ended
+    scheme of every Indian mutual fund). A scheme with a payout and a
+    reinvestment ISIN appears twice, once per ISIN. `category` is AMFI's own
+    heading ("Open Ended Schemes(Debt Scheme - Liquid Fund)"); `asset_class`
+    is the portfolio's class read from it (app/portfolio/amfi.py)."""
+
+    __tablename__ = "amfi_navs"
+
+    isin: Mapped[str] = mapped_column(String, primary_key=True)
+    scheme_code: Mapped[str] = mapped_column(String, nullable=False)
+    scheme_name: Mapped[str] = mapped_column(String, nullable=False)
+    fund_house: Mapped[str | None] = mapped_column(String, nullable=True)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    asset_class: Mapped[str] = mapped_column(String, nullable=False)
+    class_basis: Mapped[str] = mapped_column(String, nullable=False)
+    nav: Mapped[float | None] = mapped_column(Numeric(20, 4), nullable=True)
+    nav_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ── Market and macro context (app/macro/) ───────────────────────────────────
+
+class MacroPoint(Base):
+    """One observation of one macro or market series. What each series is, its
+    unit and its source are in app/macro/catalogue.py."""
+
+    __tablename__ = "macro_points"
+
+    series: Mapped[str] = mapped_column(String, nullable=False)
+    on_date: Mapped[date] = mapped_column(Date, nullable=False)
+    value: Mapped[float] = mapped_column(Numeric(20, 4), nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (PrimaryKeyConstraint("series", "on_date"),)
+
+
+class FpiSectorFlow(Base):
+    """FPI equity money by sector for one fortnight, from NSDL's fortnightly
+    sector report. `net_cr` is the net investment in the fortnight ending
+    `period_end`; `auc_cr` the assets held at that date. Shown, never scored."""
+
+    __tablename__ = "fpi_sector_flows"
+
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    sector: Mapped[str] = mapped_column(String, nullable=False)
+    net_cr: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    auc_cr: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (PrimaryKeyConstraint("period_end", "sector"),)
+
+
+# ── Earnings estimates and market news (Phases F and G) ─────────────────────
+
+class EstimateSnapshot(Base):
+    """A stock's consensus EPS estimate on one day, and how it has moved, from
+    Yahoo Finance (app/ingestion/estimate_revisions_client.py). `period` is the
+    estimate read: "+1y" (next financial year) or "0y" (this one). Kept per day
+    so revisions can later be measured from our own history too."""
+
+    __tablename__ = "estimate_snapshots"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False)
+    on_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[str] = mapped_column(String, nullable=False)
+    eps_now: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    eps_30d_ago: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+    eps_90d_ago: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+    revision_30d_pct: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    revision_90d_pct: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    up_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    down_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    analysts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (PrimaryKeyConstraint("stock_id", "on_date"),)
+
+
+class MarketNews(Base):
+    """A headline from a publisher's RSS feed (app/ingestion/news_feeds.py).
+    `symbols`: listed companies matched in it; each also gets a `company_news`
+    row, so it reaches the stock's News tab and the report."""
+
+    __tablename__ = "market_news"
+
+    url: Mapped[str] = mapped_column(String, primary_key=True)
+    publisher: Mapped[str] = mapped_column(String, nullable=False)
+    headline: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    symbols: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

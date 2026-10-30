@@ -24,6 +24,7 @@ import type {
   AnalystConsensusEntry, BlueprintSection, PricePoint, SalesMarginPoint, ValuationHistoryPoint, RoceHistoryPoint,
   PeerPerformanceSeries, Scores,
 } from "../types";
+import type { CreditRatings, RatingItem } from "./CombinedScore";
 import { api } from "../api";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import ComboTrendChart from "./charts/ComboTrendChart";
@@ -303,6 +304,41 @@ function CoverageMeter({ pct, total }: { pct: number; total: number }) {
 
 interface Props { analysis: FullAnalysis; }
 
+const ratingLine = (r: RatingItem) =>
+  `${r.agency ?? "Agency not named"} ${[r.rating, r.short_term].filter(Boolean).join(" / ") || "rating not read"}${r.outlook ? ` (${r.outlook})` : ""}`;
+
+// What the rating agencies say, as the company filed it with NSE. For reading only:
+// credit ratings feed no score, gate or classification anywhere in this app.
+function CreditRatingCard({ credit }: { credit: CreditRatings }) {
+  const agencies = Object.values(credit.by_agency);
+  return (
+    <div className="er-card" style={{ marginBottom: 16 }}>
+      <div className="er-eyebrow">Credit ratings</div>
+      <h3>What the rating agencies say <Tag kind="reported" /></h3>
+      {agencies.length > 0 ? (
+        <table style={{ width: "100%", fontSize: 13, marginTop: 8, borderCollapse: "collapse" }}>
+          <thead><tr style={{ textAlign: "left", color: "var(--er-muted)" }}>
+            <th>Agency</th><th>Rating</th><th>Outlook</th><th>Latest action</th><th>Instrument</th><th>Date</th><th>Source</th></tr></thead>
+          <tbody>{agencies.sort((a, b) => b.date.localeCompare(a.date)).map((r) => (
+            <tr key={r.filing_url}>
+              <td>{r.agency}</td>
+              <td>{[r.rating, r.short_term].filter(Boolean).join(" / ") || "—"}</td>
+              <td>{r.outlook ?? "—"}</td>
+              <td>{r.action ? readable(r.action) : "—"}{r.previous_rating ? ` from ${r.previous_rating}` : ""}</td>
+              <td>{r.instrument ?? "—"}</td>
+              <td>{r.date}</td>
+              <td><a href={r.filing_url} target="_blank" rel="noreferrer">Filing</a>{r.rationale_url && <> · <a href={r.rationale_url} target="_blank" rel="noreferrer">Rationale</a></>}</td>
+            </tr>))}</tbody>
+        </table>
+      ) : <p className="er-muted">The company filed {credit.letters} rating letter(s), but no rating on the Indian scale could be read from them.</p>}
+      <p className="er-muted" style={{ marginTop: 8, fontSize: 12 }}>
+        From {credit.letters} letter(s) filed with NSE, {credit.read} read{credit.current ? `; latest: ${ratingLine(credit.current)} on ${credit.current.date}` : ""}.
+        For information only: credit ratings are not part of any score here.
+      </p>
+    </div>
+  );
+}
+
 export default function EditorialReport({ analysis }: Props) {
   const [qi, setQi] = useState<QuarterlyIntelligence | null>(null);
   const [kpiLoaded, setKpiLoaded] = useState(false);
@@ -320,6 +356,7 @@ export default function EditorialReport({ analysis }: Props) {
   const [salesMargins, setSalesMargins] = useState<SalesMarginPoint[]>([]);
   const [valuationHistory, setValuationHistory] = useState<ValuationHistoryPoint[]>([]);
   const [roceHistory, setRoceHistory] = useState<RoceHistoryPoint[]>([]);
+  const [credit, setCredit] = useState<CreditRatings | null>(null);
 
   // Every engine below is a separate, independent fetch — each fails
   // silently into its own "not disclosed"/omitted state (never a crash)
@@ -342,6 +379,7 @@ export default function EditorialReport({ analysis }: Props) {
     api.getBalanceSheetIntelligence(companyId).then((d) => { if (!cancelled) setBsi(d); }).catch(() => {});
     api.getCashFlowIntelligence(companyId).then((d) => { if (!cancelled) setCfi(d); }).catch(() => {});
     api.getBankRoe(companyId).then((d) => { if (!cancelled) setBankRoe(d); }).catch(() => {});
+    api.getCreditRatings(companyId).then((d) => { if (!cancelled) setCredit(d); }).catch(() => {});
     api.getConcallIntelligence(companyId).then((d) => { if (!cancelled) setConcall(d); }).catch(() => {});
     api.getCompanyNews(companyId).then((d) => { if (!cancelled) setNews(d.news || []); }).catch(() => {});
     api.getEarningsCalendar(companyId).then((d) => { if (!cancelled) setCalendar(d.calendar ?? null); }).catch(() => {});
@@ -1091,6 +1129,7 @@ export default function EditorialReport({ analysis }: Props) {
               <div><div className="er-eyebrow">06 · Balance sheet architecture</div><h2>How the business is funded and how it deploys capital.</h2></div>
               <p>{bsi?.period ? `${bsi.period} · ${bsi.statement_type}.` : NA} <Tag kind="reported" /></p>
             </div>
+            {credit && credit.letters > 0 && <CreditRatingCard credit={credit} />}
             {bsi?.period && bsi.balance_sheet_integrity.status !== "BALANCE_SHEET_INTEGRITY_ERROR" ? (
               <>
                 <div className="er-verdict er-card" style={{ marginBottom: 16 }}>

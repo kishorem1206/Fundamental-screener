@@ -4,8 +4,9 @@
 
 When Business Quality cannot be measured, Quality is the Fundamental Score
 alone and says so. A major governance red flag (promoter pledge above 10% of
-the promoter holding, or a governance penalty of 10 points or more from the
-NSE shareholding checks) caps Quality at 49: such a company cannot pass the
+the promoter holding, a governance penalty of 10 points or more from the
+NSE shareholding checks, or a serious SEBI order against the company in the
+last two years — app/risk/record.py) caps Quality at 49: such a company cannot pass the
 core-portfolio gate of 50 (section 17, "no major governance red flag").
 
 Bands (section 2): 65+ strong, 50-64 good / acceptable, 40-49 borderline,
@@ -26,6 +27,9 @@ def band(score: float | None) -> str | None:
 
 
 def governance_red_flag(business_quality: dict) -> str | None:
+    regulatory = (business_quality.get("regulatory_record") or {}).get("red_flag")
+    if regulatory:
+        return regulatory
     promoter = (business_quality.get("components") or {}).get("promoter_behaviour") or {}
     for flag in promoter.get("governance_flags") or []:
         if (flag["event_type"], flag["severity"]) in _PLEDGE_EVENTS:

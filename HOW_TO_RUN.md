@@ -220,6 +220,9 @@ LLM_MODEL=openai/gpt-oss-20b
 LLM_API_KEY=gsk_...           # Groq API key
 LLM_API_BASE_URL=https://api.groq.com/openai/v1
 REPORTS_DIR=./reports
+DHAN_ACCESS_TOKEN=            # optional, Portfolio → Sync from Dhan (read only)
+UPSTOX_ACCESS_TOKEN=          # optional, Portfolio → Sync from Upstox
+GROWW_ACCESS_TOKEN=           # optional, Portfolio → Sync from Groww (paid API)
 ```
 
 ---
@@ -395,8 +398,11 @@ The quick runner re-decides every stock at the end of the run so sector ranks
 compare whole sectors. A full analysis writes its own framework row when it finishes.
 
 **Portfolio:** Portfolio page → "Connect Kite" (log in on the page that opens) →
-"Sync from Kite". The Kite session lasts until the backend restarts. Dhan or any
-other broker: "Upload holdings CSV". Gold, debt, cash, international: "Add a
+"Sync from Kite". The Kite session lasts until the backend restarts. Dhan, Upstox,
+Groww: set `DHAN_ACCESS_TOKEN` / `UPSTOX_ACCESS_TOKEN` / `GROWW_ACCESS_TOKEN` in
+`backend/.env`, restart the backend, then "Sync from Dhan" (etc.) — read only,
+holdings only. Any other broker: "Upload holdings CSV". Funds are valued and
+classed by ISIN from AMFI's daily NAV file. Gold, debt, cash, international: "Add a
 holding by hand". Set limits and asset-allocation targets on the same page.
 
 **Integrated report:** "Integrated report (PDF)" on a full analysis, or in an
@@ -418,4 +424,68 @@ cd backend
 .venv/bin/python -m app.nse_mcp.runner --fill-prices   # history for stocks with none stored
 curl -s localhost:3002/api/nse/status                  # both servers and their tools
 curl -s localhost:3002/api/nse/quote/ITC               # live quote
+```
+
+
+---
+
+## Regulatory record and credit ratings
+
+SEBI's enforcement orders and the credit rating letters companies file with NSE
+(`backend/app/risk/`). A serious SEBI order fails the framework's core gate.
+Credit ratings affect nothing: they appear only in the Editorial Report.
+
+```bash
+cd backend
+.venv/bin/python -m app.risk.runner --sebi --read-orders   # weekly: new SEBI orders, then read the ones naming a company
+.venv/bin/python -m app.risk.runner --credit --months 2    # weekly: recent rating letters (all companies, month by month)
+.venv/bin/python -m app.risk.runner --refresh-decisions    # re-apply classifications with the current flags (seconds)
+.venv/bin/python -m app.risk.runner --reparse-credit       # only after changing rating_text.py: read every stored letter again
+```
+
+First fill (done 2026-10-30): `--sebi --since 2021-10-01 --read-orders` and
+`--credit --months 15`, about an hour each.
+
+---
+
+## Market & Macro
+
+The Market & Macro page and FPI flows (`backend/app/macro/`). Context only: nothing
+here feeds a score.
+
+```bash
+cd backend
+.venv/bin/python -m app.macro.runner              # daily, after the market closes
+.venv/bin/python -m app.macro.runner --history    # first fill (done 2026-10-30)
+```
+
+RBI's page shows only today's rates and the news feeds hold about a day, so run this
+daily. It also reads the Economic Times and Mint headlines.
+
+Earnings estimates (weekly, about an hour; shown on the stock, not scored):
+
+```bash
+cd backend
+.venv/bin/python -m app.ingestion.estimate_revisions_client
+```
+
+---
+
+## Scheduled runs
+
+Two `launchd` jobs keep the data current (`backend/scripts/scheduled/`):
+
+- **Daily, 20:30:** prices, macro, FPI, news. Log: `backend/cache/scheduled_daily.log`
+- **Weekly, Sunday 09:00:** SEBI orders, rating letters, decisions, estimates. Log: `backend/cache/scheduled_weekly.log`
+
+They start Docker if it is off. A Mac that is asleep runs the job when it wakes; one
+that is shut down misses it, and the next run catches up.
+
+macOS protects `~/Downloads`, so each job runs through an app in `~/Applications`
+(Screener Daily, Screener Weekly) that asks once for access to Downloads: click Allow.
+
+```bash
+launchctl list | grep fundamentalscreener                                # check they are loaded
+launchctl kickstart gui/$(id -u)/com.fundamentalscreener.daily           # run one now
+launchctl unload ~/Library/LaunchAgents/com.fundamentalscreener.daily.plist   # stop one
 ```
