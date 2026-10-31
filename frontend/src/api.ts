@@ -126,8 +126,26 @@ export const api = {
     req<import("./types").BankRoeAnalysis>(`/bank-roe/${companyId}`),
   getCompanyScores: (params: Record<string, string>) =>
     req<import("./types").CompanyScoresResponse>(`/company-scores?${new URLSearchParams(params).toString()}`),
+  stageOverview: () => req<import("./components/StageScreener").StageOverview>("/stages/overview"),
+  stageScores: (params: Record<string, string>) =>
+    req<{ total: number; results: import("./components/StageScreener").StageRow[] }>(`/stages/scores?${new URLSearchParams(params)}`),
+  stageStock: (stockId: string) => req<import("./components/StageDetail").StageStock>(`/stages/stock?${new URLSearchParams({ stock_id: stockId })}`),
+  stageWatch: (stockId: string, on: boolean) =>
+    req<{ watched: boolean }>(`/stages/watchlist?${new URLSearchParams({ stock_id: stockId, on: String(on) })}`, { method: "PUT" }),
+  stageThresholds: () => req<{ recalculating: boolean; thresholds: import("./components/StageScreener").StageThreshold[] }>("/stages/thresholds"),
+  saveStageThresholds: (changes: Record<string, number>) =>
+    req<Record<string, number>>("/stages/thresholds", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) }),
+  recalculateStages: () => req<{ started: boolean }>("/stages/recalculate", { method: "POST" }),
+  stageExportUrl: (params: Record<string, string>, format: "csv" | "xlsx") => `${BASE}/stages/export?${new URLSearchParams({ ...params, format })}`,
+  convergenceSettings: () => req<{ version: string; recalculating: boolean; settings: { key: string; value: number; default: number; min: number; max: number; group: string; label: string }[] }>("/framework/convergence/settings"),
+  saveConvergenceSettings: (changes: Record<string, number>) =>
+    req<Record<string, number>>("/framework/convergence/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) }),
+  recalculateConvergence: () => req<{ started: boolean }>("/framework/convergence/recalculate", { method: "POST" }),
+  frameworkExportUrl: (params: Record<string, string>, format: "csv" | "xlsx") => `${BASE}/framework/export?${new URLSearchParams({ ...params, format })}`,
   canslimScores: (params: Record<string, string>) =>
     req<import("./components/CanslimPage").CanslimResponse>(`/canslim/scores?${new URLSearchParams(params)}`),
+  resultsCalendar: (month?: string) => req<import("./components/ResultsCalendar").ResultsMonth>(`/macro/results-calendar${month ? `?month=${month}` : ""}`),
+  resultsDay: (on: string) => req<import("./components/ResultsCalendar").ResultsDay>(`/macro/results-calendar/day?on=${on}`),
   macroOverview: () => req<import("./components/MacroPage").MacroOverview>(`/macro/overview`),
   getCreditRatings: (companyId: string) =>
     req<import("./components/CombinedScore").CreditRatings>(`/governance/${companyId}/credit-ratings`),

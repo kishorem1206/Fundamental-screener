@@ -250,7 +250,7 @@ export default function TechnicalScreener() {
   }
 
   return (
-    <div className="technical-root overflow-hidden flex flex-col" style={{ height: "calc(100vh - 65px)" }}>
+    <div className="technical-root overflow-hidden flex flex-col" style={{ height: "calc(100vh - var(--header-h, 65px))" }}>
       {/* Header */}
       <header
         className="px-5 py-3 flex items-center justify-between shrink-0"

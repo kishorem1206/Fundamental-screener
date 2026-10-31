@@ -83,7 +83,7 @@ def _is_throttled(data: dict) -> bool:
 
 
 def _one(stock: Stock, pacer: _Pacer, screener_pacer: _Pacer, store_framework: bool = True,
-         screener_first: bool = True) -> tuple[Stock, QuickScore, float]:
+         screener_first: bool = True, force_screener: bool = False) -> tuple[Stock, QuickScore, float]:
     from app.ingestion.screener_pages import prefetched
     from app.quick_analysis import screener_annual
 
@@ -108,7 +108,7 @@ def _one(stock: Stock, pacer: _Pacer, screener_pacer: _Pacer, store_framework: b
         # last week), and the quarterly-growth fallback inside quick_score()
         # reuses the same pages instead of loading them again.
         seen = screener_annual.last_read(session, stock.id) if screener_first else None
-        stale = screener_first and not (seen and seen > datetime.now(timezone.utc) - timedelta(days=screener_annual.FRESH_DAYS))
+        stale = screener_first and (force_screener or not (seen and seen > datetime.now(timezone.utc) - timedelta(days=screener_annual.FRESH_DAYS)))
         with prefetched(stock.symbol) if stale else nullcontext():
             if stale:
                 screener_annual.refresh(session, stock, max_age_days=0)
@@ -131,7 +131,7 @@ def _one(stock: Stock, pacer: _Pacer, screener_pacer: _Pacer, store_framework: b
 
 
 def run(stocks: list[Stock], workers: int = 4, stocks_per_sec: float = 1.5,
-        store: bool = True, screener_first: bool = True) -> list[tuple[Stock, QuickScore, float]]:
+        store: bool = True, screener_first: bool = True, force_screener: bool = False) -> list[tuple[Stock, QuickScore, float]]:
     out = []
     pacer = _Pacer(stocks_per_sec)
     # Screener's own, separate rate limit — see _Pacer's docstring. Fixed,
@@ -146,7 +146,7 @@ def run(stocks: list[Stock], workers: int = 4, stocks_per_sec: float = 1.5,
     stored = 0
     write_failures = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_one, s, pacer, screener_pacer, store, screener_first) for s in stocks]
+        futures = [pool.submit(_one, s, pacer, screener_pacer, store, screener_first, force_screener) for s in stocks]
         for i, fut in enumerate(as_completed(futures), 1):
             stock, result, secs = fut.result()
             out.append((stock, result, secs))

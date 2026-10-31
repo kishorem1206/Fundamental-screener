@@ -32,6 +32,38 @@ class StartAnalysisRequest(BaseModel):
     stock_id: str
 
 
+def create_analysis(db, stock_id: str, started_by: str = "app") -> str:
+    """The analysis row and its stage rows, ready to run."""
+    # Generate analysis ID via PostgreSQL sequence (race-safe)
+    year = datetime.now().year
+    seq_val = db.execute(sa.text("SELECT nextval('fa_analysis_seq')")).scalar()
+    analysis_id = f"FA-{year}-{seq_val:06d}"
+
+    analysis = FundamentalAnalysis(
+        id=analysis_id,
+        stock_id=stock_id,
+        status="QUEUED",
+        started_by=started_by,
+        overall_progress=0,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    db.add(analysis)
+    db.commit()
+
+    # Create stage records
+    for stage_key, stage_label, _ in STAGES:
+        db.add(AnalysisStage(
+            id=str(uuid.uuid4()),
+            analysis_id=analysis_id,
+            stage_name=stage_key,
+            status="PENDING",
+            progress=0,
+        ))
+    db.commit()
+    return analysis_id
+
+
 def _run_detached(analysis_id: str, stock_id: str) -> None:
     """Runs one analysis to the end, holding off the Mac's idle sleep meanwhile."""
     keep_awake = None
@@ -51,7 +83,9 @@ def fail_interrupted() -> int:
     so, or the page would wait on it forever."""
     db = get_db()
     try:
-        rows = db.query(FundamentalAnalysis).filter(FundamentalAnalysis.status.in_(("QUEUED", "RUNNING"))).all()
+        # the scheduled job runs in its own process and clears up after itself
+        rows = (db.query(FundamentalAnalysis).filter(FundamentalAnalysis.status.in_(("QUEUED", "RUNNING")),
+                                                     FundamentalAnalysis.started_by == "app").all())
         for a in rows:
             a.status, a.error_message, a.updated_at = "FAILED", "The server restarted while this analysis was running. Start it again.", _now()
         db.commit()
@@ -70,41 +104,7 @@ def start_analysis(req: StartAnalysisRequest):
         if stock is None:
             raise HTTPException(status_code=404, detail=f"Stock {req.stock_id} not found")
 
-        # Check if there's already a completed analysis for this stock (return it)
-        existing = (
-            db.query(FundamentalAnalysis)
-            .filter_by(stock_id=req.stock_id, status="COMPLETED")
-            .order_by(FundamentalAnalysis.created_at.desc())
-            .first()
-        )
-
-        # Generate analysis ID via PostgreSQL sequence (race-safe)
-        year = datetime.now().year
-        seq_val = db.execute(sa.text("SELECT nextval('fa_analysis_seq')")).scalar()
-        analysis_id = f"FA-{year}-{seq_val:06d}"
-
-        analysis = FundamentalAnalysis(
-            id=analysis_id,
-            stock_id=req.stock_id,
-            status="QUEUED",
-            overall_progress=0,
-            created_at=_now(),
-            updated_at=_now(),
-        )
-        db.add(analysis)
-        db.commit()
-
-        # Create stage records
-        for stage_key, stage_label, _ in STAGES:
-            db.add(AnalysisStage(
-                id=str(uuid.uuid4()),
-                analysis_id=analysis_id,
-                stage_name=stage_key,
-                status="PENDING",
-                progress=0,
-            ))
-        db.commit()
-
+        analysis_id = create_analysis(db, req.stock_id)
         logger.info("Analysis created", analysis_id=analysis_id, stock_id=req.stock_id)
 
         # Its own thread, not tied to this request or to the browser in any way

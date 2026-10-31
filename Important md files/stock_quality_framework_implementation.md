@@ -674,7 +674,7 @@ a sector.
 Of 2,624 stocks 2,454 rank in their basic industry, 151 in their industry, 19 not at
 all. Sector limits stay at sector level, because they are about concentration. The
 "vs sector" Relative Strength part still uses NSE's sector index where one exists.
-`scripts/recompute_relative_strength.py` recomputes that one score from stored prices.
+`scripts/refresh_price_scores.py` recomputes Relative Strength and Technical from stored prices, daily.
 
 ## Phase E: Open in (2026-10-30)
 
@@ -744,3 +744,24 @@ listed it as a gap); I treats FII + DII above 70% as crowded, and 10-20% as fair
 the 50-day average. CANSLIM averages the letters available and needs at least four.
 Combined is 60% CANSLIM + 40% peer quality, the stock's Quality percentile among its peers.
 The notes' reversal ranking was not built.
+
+
+## Results calendar (2026-10-31)
+
+`backend/app/results/`, table `results_calendar` (migration 0049), shown on Market & Macro.
+NSE's event calendar (`/api/event-calendar`) gives each board meeting; only those for
+financial results are kept. The daily job works through meetings before today: it reads
+Screener for those stocks only, forcing past the usual "read within a week" skip, re-scores
+them, and marks a meeting done only once a quarter ending within 100 days of it is stored.
+If Screener has not posted it, the stock stays pending and retries daily, then is given up
+after five tries. A missed day only delays the work. A moved meeting is dropped when NSE
+no longer lists it.
+
+What updates when: a stock that reports gets its Quick score, Combined scores and decision
+refreshed, and its full analysis redone if it has one (`results/full_analysis.py`, at most 10
+a night, marked `started_by = scheduler`). Relative Strength and Technical refresh daily for
+every stock. Valuation and every other score change only when a stock reports.
+
+## Investment convergence (2026-10-31)
+
+The Combined Score page now has a combined number, five dimensions, reward/risk and a research class (`app/convergence/`). The six scores, their formulas and the seven decision classes are unchanged. The combined number only ranks; gates set the class, so the framework's rule that no decision rests on one score still holds. Credit ratings, earnings revisions, FPI flows and macro stay out of it. Details: `investment_convergence_audit_and_plan.md`.

@@ -216,3 +216,36 @@ h1, h2, h3, .font-display { font-family: var(--font-display); }
 }
 .dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; }
 .dual-range input[type="range"]::-moz-range-track { background: transparent; }
+
+/* Stage Screener: its own light theme. Every token is redefined here, so the page's
+   cards and text follow it and no other page is touched. */
+.stage-root {
+  --bg-base: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f6f6f3;
+  --bg-input: #ffffff;
+  --border-subtle: #e6e5e0;
+  --glass: #f6f6f3;
+  --glass-hi: #eeeeea;
+  --glass-border: #f6f6f3;
+  --text-primary: #1f1f1c;
+  --text-secondary: #55554f;
+  --text-muted: #77776f;
+  --text-dim: #77776f;
+  --stage-1: #3b78c9;
+  --stage-2: #17805c;
+  --stage-3: #e0a92a;
+  --stage-4: #a8342c;
+  --stage-none: #b9b8b1;
+  background: #ffffff;
+  color: var(--text-primary);
+  min-height: calc(100vh - var(--header-h, 65px));
+}
+.stage-root h1, .stage-root h2, .stage-root h3 { font-family: var(--font-body); letter-spacing: -0.03em; }
+.stage-root .eyebrow { color: var(--text-secondary); letter-spacing: 0.14em; }
+.stage-root .card-rich { box-shadow: none; backdrop-filter: none; border-radius: 24px; }
+.stage-root .card-white { background: #ffffff; border: 1px solid var(--border-subtle); border-radius: 16px; }
+.stage-root input, .stage-root select { background: #ffffff; border: 1px solid var(--border-subtle); color: var(--text-primary); }
+.stage-root table tbody tr:hover { background: var(--bg-card-hover); }
+.stage-pill { padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600; color: var(--text-secondary); background: #ffffff; border: 1px solid var(--border-subtle); }
+.stage-pill[aria-pressed="true"] { color: #ffffff; background: #1f1f1c; border-color: #1f1f1c; }

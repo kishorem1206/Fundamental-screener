@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from sqlalchemy import (
     Date,
-    String, Boolean, Integer, BigInteger, Numeric, Text,
+    String, Boolean, Integer, SmallInteger, BigInteger, Numeric, Text,
     DateTime, JSON, ForeignKey, Index, UniqueConstraint,
     PrimaryKeyConstraint,
 )
@@ -53,6 +53,8 @@ class FundamentalAnalysis(Base):
     )
     status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED")
     # QUEUED | RUNNING | COMPLETED | FAILED | CANCELLED
+    # "app", or "scheduler" for the day-after-results job, which runs in its own process
+    started_by: Mapped[str] = mapped_column(String, nullable=False, default="app")
     current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     stage_progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     overall_progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -1920,3 +1922,176 @@ class CanslimScore(Base):
     basis: Mapped[str | None] = mapped_column(String, nullable=True)
     detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ── Results calendar (app/results/) ──────────────────────────────────────────
+
+class ResultsCalendar(Base):
+    """A board meeting to consider financial results, from NSE's event calendar.
+    The stock is re-read the day after. PENDING until the new quarter is on
+    Screener; GAVE_UP after five days without it. `quarter`: the latest quarter
+    stored when it was last checked."""
+
+    __tablename__ = "results_calendar"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), nullable=False)
+    board_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quarter: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_tried_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Analysts' consensus for the quarter being reported, read before the meeting (app/results/estimates.py)
+    eps_estimate: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    eps_low: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    eps_high: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    eps_year_ago: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    eps_analysts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revenue_estimate_cr: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    revenue_year_ago_cr: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    revenue_analysts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimate_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    __table_args__ = (PrimaryKeyConstraint("stock_id", "board_date"),)
+
+
+# ── Stage analysis (app/stages/) ─────────────────────────────────────────────
+
+class StageScore(Base):
+    """A Nifty 500 stock's latest Weinstein stage, one row a stock. Its own screen:
+    nothing here feeds the framework's scores. `stage` is null when the evidence
+    is too thin, and `reason` says why. `detail` holds every condition and the
+    transition checks. `provisional` means the week has not closed yet."""
+
+    __tablename__ = "stage_scores"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), primary_key=True)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    week_end: Mapped[date] = mapped_column(Date, nullable=False)
+    provisional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True, index=True)
+    sub_stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    prev_stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    stage_since: Mapped[date | None] = mapped_column(Date, nullable=True)
+    weeks_in_stage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    close: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    sma30: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    sma10: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    sma_slope_pct: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    sma_distance_pct: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    rs: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    rs_change: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    rs_improving: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rsi: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    volume_ratio: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    high_52w: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    low_52w: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    high_distance_pct: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    weeks_above_sma: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resistance: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    support: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    opportunity: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    near_breakout: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class StageHistory(Base):
+    """One row a week for the chart and the stage history. Each week was classified
+    from that week and earlier only. Replaced whole on every run, because a split
+    or dividend restates adjusted prices. `week_end` is the week's Friday."""
+
+    __tablename__ = "stage_history"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), primary_key=True)
+    week_end: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    open: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
+    high: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
+    low: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
+    close: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sma30: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    sma10: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    rs: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    sub_stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    event: Mapped[str | None] = mapped_column(String, nullable=True)
+    provisional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class StageThreshold(Base):
+    """An override of one default in app/stages/settings.py."""
+
+    __tablename__ = "stage_thresholds"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[float] = mapped_column(Numeric(10, 3), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class StageWatch(Base):
+    __tablename__ = "stage_watchlist"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), primary_key=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ── Investment convergence (app/convergence/) ────────────────────────────────
+
+class ConvergenceScore(Base):
+    """A stock's latest convergence read, one row a stock. `combined` ranks; the
+    gates set `classification`. Reads the framework and the Stage Screener and
+    feeds neither. `detail` holds the dimensions, gates, reward/risk and assessment."""
+
+    __tablename__ = "convergence_scores"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), primary_key=True)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    method_version: Mapped[str] = mapped_column(String, nullable=False)
+    combined: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True, index=True)
+    classification: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    confidence: Mapped[float] = mapped_column(Numeric(5, 1), nullable=False)
+    confidence_label: Mapped[str] = mapped_column(String, nullable=False)
+    risk_reward: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    upside_pct: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
+    downside_pct: Mapped[float | None] = mapped_column(Numeric(10, 1), nullable=True)
+    target: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    invalidation: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConvergenceHistory(Base):
+    """One row a stock a day, kept for good. The framework's latest row is
+    overwritten by the daily price refresh, so this is where day-to-day changes last."""
+
+    __tablename__ = "convergence_history"
+
+    stock_id: Mapped[str] = mapped_column(String, ForeignKey("stocks.id", ondelete="CASCADE"), primary_key=True)
+    as_of: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    method_version: Mapped[str] = mapped_column(String, nullable=False)
+    quality: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    fundamental: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    technical: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    relative_strength: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    valuation: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    stage: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    sub_stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    risk_reward: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    combined: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    classification: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ConvergenceSetting(Base):
+    """An override of one default in app/convergence/settings.py."""
+
+    __tablename__ = "convergence_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[float] = mapped_column(Numeric(10, 3), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

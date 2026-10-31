@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Bar, BarChart, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api";
+import ResultsCalendar from "./ResultsCalendar";
 
 export interface MacroSeries { id: string; label: string; unit: string; source: string; frequency: string; value: number; date: string;
   stale: boolean; previous: number | null; change: number | null; history: { date: string; value: number }[] }
@@ -131,6 +132,7 @@ export default function MacroPage() {
       </div>
       {err && <div className="text-xs" style={{ color: "var(--accent-red)" }}>{err}</div>}
       {!d && !err && <div className="text-xs" style={{ color: DIM }}>Loading…</div>}
+      <ResultsCalendar />
       {d && d.groups.map((g) => (
         <section key={g.group} className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: DIM }}>{g.group}</h2>

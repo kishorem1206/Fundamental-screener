@@ -1,7 +1,8 @@
 // CANSLIM screen for every stock. A separate read: nothing here feeds the framework's scores.
 import { Fragment, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleHelp } from "lucide-react";
 import { api } from "../api";
+import CanslimGuide from "./CanslimGuide";
 
 type Letter = "c" | "a" | "n" | "s" | "l" | "i" | "m";
 type SortKey = Letter | "canslim" | "peer_quality" | "combined";
@@ -36,6 +37,7 @@ export default function CanslimPage({ onAnalyse }: { onAnalyse?: (stockId: strin
   const [order, setOrder] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [guide, setGuide] = useState(false);
 
   useEffect(() => { api.getSectors().then((r) => setSectors(r.sectors)).catch(() => setSectors([])); }, []);
   useEffect(() => { setPage(0); }, [search, sector, strong, sortBy, order]);
@@ -66,9 +68,16 @@ export default function CanslimPage({ onAnalyse }: { onAnalyse?: (stockId: strin
 
   return (
     <div className="space-y-6 fade-in">
+      {guide && <CanslimGuide onClose={() => setGuide(false)} />}
       <div className="card-rich p-6">
-        <p className="eyebrow">CANSLIM</p>
-        <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Growth leaders, on William O'Neil's seven letters</h1>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">CANSLIM</p>
+            <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Growth leaders, on William O'Neil's seven letters</h1>
+          </div>
+          <button onClick={() => setGuide(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
+                  style={{ color: "var(--accent-gold-bright)", border: "1px solid rgba(201,162,39,0.45)" }}><CircleHelp size={14} /> Explain</button>
+        </div>
         <p className="text-sm max-w-3xl" style={{ color: "var(--text-secondary)" }}>
           Every stock scored on earnings growth, new highs, volume, relative strength, institutions and the market. Combined is 60% CANSLIM and 40% peer quality.
           A letter with no data is left out, never counted as zero. This is a separate read: it does not change your Quality, classifications or any other score.</p>
@@ -146,13 +155,6 @@ export default function CanslimPage({ onAnalyse }: { onAnalyse?: (stockId: strin
             </div>
           )}
         </>}
-      </div>
-
-      <div className="card-rich p-5 text-xs space-y-1" style={{ color: "var(--text-secondary)" }}>
-        <p className="eyebrow mb-1">How each letter is scored</p>
-        {LETTERS.map((l) => <div key={l.key}><b style={{ color: "var(--text-primary)" }}>{l.key.toUpperCase()}, {l.name}.</b> {l.rule}</div>)}
-        <div className="pt-1" style={{ color: "var(--text-dim)" }}>The "new product or management" half of N has no data feed. CANSLIM needs at least 4 of the 7 letters.
-          O'Neil's selling rule is a stop-loss 7-8% below the purchase price.</div>
       </div>
     </div>
   );

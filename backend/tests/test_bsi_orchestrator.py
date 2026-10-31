@@ -190,7 +190,9 @@ def test_no_yfinance_metrics_never_raises(db):
     company_id = _fixture_company_id(db, _MANUFACTURING_SYMBOL)
     result = compute_balance_sheet_intelligence(db, company_id, sector_name="Auto Manufacturers", yfinance_metrics=None)
     assert result["period"] is not None
-    assert result["working_capital"]["dso_series"][result["period"]] == 11.0
+    # the newest figure, not result["period"]: a half-year balance sheet can be newer than the last annual ratio
+    series = result["working_capital"]["dso_series"]
+    assert series[max(series)] == 11.0
     assert len(result["working_capital"]["dso_series"]) >= 10, "should carry Screener's full multi-year history, not one point"
     assert result["working_capital"]["single_period_fallback"].get("dso") is True
 

@@ -4,6 +4,7 @@ import type { FullAnalysis, Stock } from "./types";
 import TopBar, { type Section } from "./components/TopBar";
 import CanslimPage from "./components/CanslimPage";
 import MacroPage from "./components/MacroPage";
+import StageScreener from "./components/StageScreener";
 import RunningAnalyses from "./components/RunningAnalyses";
 import QuickScreener from "./components/QuickScreener";
 import ExploreView from "./components/ExploreView";
@@ -116,8 +117,9 @@ export default function App() {
 
       {/* The technical screener is a full-width workspace with its own sidebars, so it sits outside the page column. */}
       {phase === "explore" && section === "technical" && <TechnicalScreener />}
+      {phase === "explore" && section === "stages" && <StageScreener onAnalyse={startFullAnalysis} />}
 
-      <main className="max-w-6xl mx-auto px-6 py-8" style={phase === "explore" && section === "technical" ? { display: "none" } : undefined}>
+      <main className={`${phase === "explore" && section === "combined" ? "max-w-[1500px]" : "max-w-6xl"} mx-auto px-6 py-8`} style={phase === "explore" && (section === "technical" || section === "stages") ? { display: "none" } : undefined}>
         {startError && (
           <div className="rounded-lg px-4 py-3 text-sm mb-6"
                style={{ background: "rgba(217,105,79,0.1)", border: "1px solid rgba(217,105,79,0.3)", color: "#d9694f" }}>

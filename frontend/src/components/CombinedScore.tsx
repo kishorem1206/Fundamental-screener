@@ -1,12 +1,14 @@
 import { Fragment, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Download, SlidersHorizontal } from "lucide-react";
 import { api } from "../api";
+import ConvergencePanel, { Methodology, RESEARCH_COLOR, STAGE_DOT, stageName, type Convergence } from "./ConvergencePanel";
 
-// Combined Score — the framework's scores side by side, never blended into one
-// number (Important md files/stock_quality_portfolio_replacement_agent_framework.md,
-// section 1). A score column fills in when the phase that builds it lands.
+// Combined Score: the framework's scores side by side with the convergence read. The
+// combined number only ranks; eligibility gates set the research class, so no decision
+// rests on one score (stock_quality_portfolio_replacement_agent_framework.md, Purpose).
 
 type ScoreKey = "quality" | "fundamental" | "quantitative" | "relative_strength" | "technical" | "valuation";
+type SortKey = ScoreKey | "market_cap" | "quality_change_12m" | "combined" | "risk_reward" | "stage" | "cmp";
 
 export interface FrameworkScoreRow {
   stock_id: string;
@@ -32,6 +34,14 @@ export interface FrameworkScoreRow {
   quality_change_12m: number | null;
   quality_direction: string | null;
   sector_rank?: { rank: number; of: number; top_pct: number; label: string; group: string; level: string } | null;
+  combined?: number | null;
+  research_class?: string | null;
+  confidence_label?: string | null;
+  risk_reward?: number | null;
+  stage?: number | null;
+  sub_stage?: string | null;
+  cmp?: number | null;
+  rs_improving?: boolean | null;
 }
 
 type Part = { score: number | null; weight?: number; reason?: string; note?: string; source?: string; basis?: string; [k: string]: unknown };
@@ -55,6 +65,7 @@ export interface RiskRecord {
 export interface CreditRatings { letters: number; read: number; current: RatingItem | null; by_agency: Record<string, RatingItem>; history: RatingItem[]; source: string }
 export interface FrameworkStockDetail extends FrameworkScoreRow {
   best_alternative?: Alt | null;
+  convergence?: Convergence;
   risk?: RiskRecord | null;
   sector_flow?: import("./MacroPage").SectorFlow | null;
   estimates?: { eps_now: number; estimate_for: string; revision_pct: number | null; over: string; raised_30d: number | null; cut_30d: number | null;
@@ -86,6 +97,8 @@ export interface FrameworkScoresResponse {
   total: number;
   scores: FrameworkScoreRow[];
   sectors: string[];
+  class_counts?: Record<string, number>;
+  market?: { score: number | null; text: string; view?: string } | null;
 }
 
 const SCORES: { key: ScoreKey; label: string; question: string; pending?: string }[] = [
@@ -110,6 +123,7 @@ const scoreColor = (v: number | null) =>
   v === null ? "var(--text-dim)" : v >= 65 ? "#4fb3a0" : v >= 50 ? "#c9a227" : v >= 40 ? "#e0793c" : "#d9694f";
 
 const PAGE = 50;
+const RESEARCH = ["High Priority", "Strong Candidate", "Early Opportunity", "Watchlist", "Caution", "Low Priority", "Not Rated"];
 
 interface Props {
   onAnalyse?: (stockId: string) => void;
@@ -121,30 +135,39 @@ export default function CombinedScore({ onAnalyse }: Props) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState("");
   const [trend, setTrend] = useState("");
-  const [sort, setSort] = useState<ScoreKey | "market_cap" | "quality_change_12m">("quality");
+  const [sort, setSort] = useState<SortKey>("combined");
+  const [research, setResearch] = useState("");
+  const [stage, setStage] = useState("");
+  const [method, setMethod] = useState(false);
+  const [reload, setReload] = useState(0);
   const [direction, setDirection] = useState("");
   const [cls, setCls] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
 
-  useEffect(() => { setPage(0); }, [q, sector, trend, direction, cls, sort, order]);
+  useEffect(() => { setPage(0); }, [q, sector, trend, direction, cls, research, stage, sort, order]);
+
+  const filters: Record<string, string> = { sort, order };
+  if (q.trim()) filters.q = q.trim();
+  if (sector) filters.sector = sector;
+  if (trend) filters.trend = trend;
+  if (direction) filters.direction = direction;
+  if (cls) filters.classification = cls;
+  if (research) filters.research_class = research;
+  if (stage) filters.stage = stage;
 
   useEffect(() => {
-    const params: Record<string, string> = { sort, order, limit: String(PAGE), offset: String(page * PAGE) };
-    if (q.trim()) params.q = q.trim();
-    if (sector) params.sector = sector;
-    if (trend) params.trend = trend;
-    if (direction) params.direction = direction;
-    if (cls) params.classification = cls;
+    const params: Record<string, string> = { ...filters, limit: String(PAGE), offset: String(page * PAGE) };
     const t = setTimeout(() => {
       api.getFrameworkScores(params).then((r) => { setData(r); setError(""); })
         .catch((e: unknown) => setError(e instanceof Error ? e.message : "Could not load scores"));
     }, 200);
     return () => clearTimeout(t);
-  }, [q, sector, trend, direction, cls, sort, order, page]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, sector, trend, direction, cls, research, stage, sort, order, page, reload]);
 
-  const sortBy = (key: ScoreKey | "market_cap" | "quality_change_12m") => {
+  const sortBy = (key: SortKey) => {
     if (sort === key) setOrder(order === "desc" ? "asc" : "desc");
     else { setSort(key); setOrder("desc"); }
   };
@@ -154,16 +177,32 @@ export default function CombinedScore({ onAnalyse }: Props) {
   return (
     <div className="space-y-6 fade-in">
       <div className="card-rich p-6">
-        <p className="eyebrow">Combined score</p>
-        <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-          Six scores, side by side
-        </h1>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">Combined score</p>
+            <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Where quality, trend, strength, price and risk line up</h1>
+          </div>
+          <button onClick={() => setMethod(!method)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
+                  style={{ color: "var(--accent-gold-bright)", border: "1px solid rgba(201,162,39,0.45)" }}><SlidersHorizontal size={13} /> Method</button>
+        </div>
         <p className="text-sm max-w-3xl" style={{ color: "var(--text-secondary)" }}>
-          Each score answers its own question and they are never averaged: a strong chart cannot repair weak
-          fundamentals, and a cheap price cannot repair a weak business. Quality is the first gate: 50 to invest,
-          65 and above preferred. Open a row to see every input and where it came from; the remaining columns fill
-          in as they are built.
+          Five dimensions make the Combined number, which only ranks stocks. The class comes from gates, so a high number
+          cannot make a stock High Priority: a strong chart cannot repair weak fundamentals, and a cheap price cannot repair a
+          weak business. Open a row for the reasons, the levels and every input.
         </p>
+        {data?.market && <p className="text-xs mt-2" style={{ color: "var(--text-secondary)" }}><b style={{ color: "var(--text-primary)" }}>Market: {data.market.view}.</b> {data.market.text}. It changes no score here.</p>}
+      </div>
+
+      {method && <Methodology onClose={() => setMethod(false)} onSaved={() => { setMethod(false); setTimeout(() => setReload((v) => v + 1), 4000); }} />}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+        {RESEARCH.map((name) => (
+          <button key={name} aria-pressed={research === name} onClick={() => setResearch(research === name ? "" : name)} className="card-rich px-3 py-2.5 text-left"
+                  style={research === name ? { borderColor: RESEARCH_COLOR[name] } : undefined}>
+            <div className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}><span className="w-2 h-2 rounded-sm" style={{ background: RESEARCH_COLOR[name] }} />{name}</div>
+            <div className="text-xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{data?.class_counts?.[name] ?? "—"}</div>
+          </button>
+        ))}
       </div>
 
       <div className="card-rich p-4">
@@ -182,6 +221,11 @@ export default function CombinedScore({ onAnalyse }: Props) {
             <option value="">Any classification</option>
             {Object.keys(CLASS_COLOR).map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+          <select aria-label="Weinstein stage" value={stage} onChange={(e) => setStage(e.target.value)} className="rounded-lg px-3 py-2 text-sm" style={inputStyle}>
+            <option value="">Any stage</option>
+            {[1, 2, 3, 4].map((s) => <option key={s} value={s}>Stage {s}</option>)}
+            <option value="0">Unclassified</option>
+          </select>
           <select value={direction} onChange={(e) => setDirection(e.target.value)} className="rounded-lg px-3 py-2 text-sm" style={inputStyle}>
             <option value="">Any quality momentum</option>
             <option value="IMPROVING">Quality improving</option>
@@ -191,6 +235,10 @@ export default function CombinedScore({ onAnalyse }: Props) {
           <span className="text-xs ml-auto" style={{ color: "var(--text-dim)" }}>
             {data ? `${data.total.toLocaleString("en-IN")} stocks` : "Loading…"}
           </span>
+          {(["csv", "xlsx"] as const).map((f) => (
+            <a key={f} href={api.frameworkExportUrl(filters, f)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs" style={{ color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}>
+              <Download size={12} /> {f === "csv" ? "CSV" : "Excel"}</a>
+          ))}
         </div>
 
         {error && <div className="text-sm mb-3" style={{ color: "var(--accent-red)" }}>{error}</div>}
@@ -200,6 +248,19 @@ export default function CombinedScore({ onAnalyse }: Props) {
             <thead>
               <tr style={{ color: "var(--text-dim)", borderBottom: "1px solid var(--border-subtle)" }}>
                 <th className="text-left py-2 px-2 text-xs font-medium">Stock</th>
+                <th className="text-right py-2 px-2 text-xs font-medium">
+                  <button onClick={() => sortBy("cmp")} className="inline-flex items-center gap-1" style={{ color: sort === "cmp" ? "var(--accent-gold-bright)" : "inherit" }}>CMP{sort === "cmp" && <Arrow className="h-3 w-3" />}</button>
+                </th>
+                <th className="text-right py-2 px-2 text-xs font-medium" title="Weighted average of the five dimensions. It ranks stocks; it does not set the class.">
+                  <button onClick={() => sortBy("combined")} className="inline-flex items-center gap-1" style={{ color: sort === "combined" ? "var(--accent-gold-bright)" : "inherit" }}>Combined{sort === "combined" && <Arrow className="h-3 w-3" />}</button>
+                </th>
+                <th className="text-left py-2 px-2 text-xs font-medium" title="Research class, set by the gates. Open a row to see which gates pass.">Class</th>
+                <th className="text-left py-2 px-2 text-xs font-medium">
+                  <button onClick={() => sortBy("stage")} className="inline-flex items-center gap-1" style={{ color: sort === "stage" ? "var(--accent-gold-bright)" : "inherit" }}>Stage{sort === "stage" && <Arrow className="h-3 w-3" />}</button>
+                </th>
+                <th className="text-right py-2 px-2 text-xs font-medium" title="Upside to the target ÷ downside to the invalidation level, from chart levels">
+                  <button onClick={() => sortBy("risk_reward")} className="inline-flex items-center gap-1" style={{ color: sort === "risk_reward" ? "var(--accent-gold-bright)" : "inherit" }}>Reward/risk{sort === "risk_reward" && <Arrow className="h-3 w-3" />}</button>
+                </th>
                 <th className="text-left py-2 px-2 text-xs font-medium" title="Classification and action from the framework's gates and decision matrix">Decision</th>
                 {SCORES.map((s) => (
                   <th key={s.key} className="text-right py-2 px-2 text-xs font-medium" title={s.question}>
@@ -249,6 +310,17 @@ export default function CombinedScore({ onAnalyse }: Props) {
                         </span>
                       </button>
                     </td>
+                    <td className="py-2 px-2 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.cmp == null ? "—" : r.cmp.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                    <td className="py-2 px-2 text-right tabular-nums font-bold" style={{ color: scoreColor(r.combined ?? null) }}>{r.combined == null ? "—" : r.combined.toFixed(1)}</td>
+                    <td className="py-2 px-2 text-xs whitespace-nowrap">
+                      <div style={{ color: r.research_class ? RESEARCH_COLOR[r.research_class] : "var(--text-dim)" }}>{r.research_class ?? "—"}</div>
+                      {r.confidence_label && <div style={{ color: "var(--text-dim)" }}>{r.confidence_label.toLowerCase()} confidence</div>}
+                    </td>
+                    <td className="py-2 px-2 text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                      <span className="inline-block w-2 h-2 rounded-sm mr-1.5" style={{ background: r.stage ? STAGE_DOT[r.stage] : "var(--text-dim)" }} />
+                      {stageName(r.stage, r.sub_stage)}{r.rs_improving === true ? " ↑" : r.rs_improving === false ? " ↓" : ""}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.risk_reward == null ? "—" : r.risk_reward.toFixed(1)}</td>
                     <td className="py-2 px-2 text-xs">
                       <div style={{ color: r.classification ? CLASS_COLOR[r.classification] : "var(--text-dim)" }}>{r.classification ?? "—"}</div>
                       <div style={{ color: "var(--text-dim)" }}>{r.action ?? ""}</div>
@@ -284,7 +356,12 @@ export default function CombinedScore({ onAnalyse }: Props) {
                     </td>
                   </tr>
                   {isOpen && (
-                    <tr><td colSpan={SCORES.length + 7} className="p-0"><StockDetail symbol={r.symbol} onAnalyse={onAnalyse ? () => onAnalyse(r.stock_id) : undefined} /></td></tr>
+                    <tr><td colSpan={SCORES.length + 12} className="p-0">
+                      {/* The table scrolls sideways; this stays the width of the card and in view. */}
+                      <div className="sticky left-0" style={{ maxWidth: "min(1420px, calc(100vw - 82px))" }}>
+                        <StockDetail symbol={r.symbol} showConvergence onAnalyse={onAnalyse ? () => onAnalyse(r.stock_id) : undefined} />
+                      </div>
+                    </td></tr>
                   )}
                   </Fragment>
                 );
@@ -427,7 +504,7 @@ function RiskPanel({ risk }: { risk: RiskRecord }) {
   );
 }
 
-export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?: () => void }) {
+export function StockDetail({ symbol, onAnalyse, showConvergence }: { symbol: string; onAnalyse?: () => void; showConvergence?: boolean }) {
   const [d, setD] = useState<FrameworkStockDetail | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -446,6 +523,7 @@ export function StockDetail({ symbol, onAnalyse }: { symbol: string; onAnalyse?:
   return (
     <div className="p-4 space-y-4" style={{ background: "var(--glass)" }}>
       <OpenInBar symbol={d.symbol} name={d.company_name} />
+      {showConvergence && d.convergence && <ConvergencePanel c={d.convergence} row={d} />}
       <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
         <b style={{ color: "var(--text-primary)" }}>Quality {quality?.score?.toFixed(1) ?? "—"}</b>
         {quality?.band ? ` (${quality.band.toLowerCase().replace("_", " ")})` : ""} = {quality?.formula ?? "—"}.

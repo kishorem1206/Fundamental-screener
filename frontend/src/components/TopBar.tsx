@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase, Globe, TrendingUp } from "lucide-react";
+import { Search, ArrowLeft, LayoutGrid, Zap, SlidersHorizontal, Layers, CandlestickChart, Briefcase, Globe, TrendingUp, Activity } from "lucide-react";
 import type { Stock } from "../types";
 
-export type Section = "combined" | "explore" | "quick" | "canslim" | "technical" | "portfolio" | "macro" | "assumptions";
+export type Section = "combined" | "explore" | "quick" | "canslim" | "stages" | "technical" | "portfolio" | "macro" | "assumptions";
 
 interface Props {
   allStocks: Stock[];
@@ -17,6 +17,15 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLElement>(null);
+
+  // The nav wraps onto a second row on laptop screens; full-height pages size themselves from this.
+  useEffect(() => {
+    if (!barRef.current) return;
+    const watch = new ResizeObserver(([e]) => document.documentElement.style.setProperty("--header-h", `${(e.target as HTMLElement).offsetHeight}px`));
+    watch.observe(barRef.current);
+    return () => watch.disconnect();
+  }, []);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -58,7 +67,8 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
 
   return (
     <header
-      className="px-6 py-3 flex items-center gap-4 sticky top-0 z-50"
+      ref={barRef}
+      className="px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 sticky top-0 z-50"
       style={{
         borderBottom: "1px solid var(--border-subtle)",
         background: "rgba(7,15,31,0.92)",
@@ -80,7 +90,7 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
         </div>
       </button>
 
-      <div ref={boxRef} className="relative flex-1 max-w-md">
+      <div ref={boxRef} className="relative flex-1 min-w-[220px] max-w-md">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "var(--text-dim)" }} />
           <input
@@ -130,12 +140,13 @@ export default function TopBar({ allStocks, showBack, onBack, onPick, section, o
           <ArrowLeft className="h-3 w-3" /> Back
         </button>
       )}
-      <nav className="hidden md:flex items-center gap-1 flex-shrink-0">
+      <nav className="hidden md:flex items-center gap-1">
         {([
           { key: "combined" as const, label: "Combined Score", Icon: Layers },
           { key: "explore" as const, label: "Full Analysis", Icon: LayoutGrid },
           { key: "quick" as const, label: "Quick Screener", Icon: Zap },
           { key: "canslim" as const, label: "CANSLIM", Icon: TrendingUp },
+          { key: "stages" as const, label: "Stage Screener", Icon: Activity },
           { key: "technical" as const, label: "Technical Screener", Icon: CandlestickChart },
           { key: "portfolio" as const, label: "Portfolio", Icon: Briefcase },
           { key: "macro" as const, label: "Market & Macro", Icon: Globe },

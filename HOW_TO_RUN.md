@@ -155,20 +155,7 @@ Tracks every NSE IPO (from NSE's own `/api/public-past-issues` + `/api/all-upcom
 cd backend && .venv/bin/python -m scripts.update_ipo_universe
 ```
 
-**Weekly automatic run (macOS `launchd`):** a job is installed at `~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist`, firing every Monday 8am. It only runs while your Mac is on, and needs Docker (Postgres/Redis) already up — if either is asleep/off at trigger time, that week's run just fails silently; the next Monday's run catches up since the whole pipeline is idempotent. Logs land in `backend/cache/ipo_update.log`.
-
-```bash
-# check it's loaded
-launchctl list | grep fundamentalscreener
-
-# reload after editing the plist
-launchctl unload ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
-launchctl load ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
-
-# remove it entirely
-launchctl unload ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
-rm ~/Library/LaunchAgents/com.fundamentalscreener.ipo-update.plist
-```
+**Automatic run:** part of the weekly scheduled job (see Scheduled runs below).
 
 ---
 
@@ -471,12 +458,33 @@ cd backend
 
 ---
 
+## Stage Screener
+
+A separate page for Stan Weinstein's four stages on every stock with prices, from stored prices. It reads no other score and feeds none. Method, thresholds and test results: `Important md files/stage_screener_methodology.md`.
+
+```bash
+cd backend && .venv/bin/python -m app.stages.runner        # replays every stock's history, about a minute, nothing fetched
+cd backend && .venv/bin/python -m scripts.refresh_nifty_lists   # NSE's index lists; the weekly job does this
+```
+
+The page's Thresholds panel saves overrides to `stage_thresholds`; saving replays the whole history with the new values.
+
+## Combined Score and convergence
+
+The Combined Score page ranks stocks by a combined number and classes them with gates. The number never sets the class. Audit, formula and results: `Important md files/investment_convergence_audit_and_plan.md`.
+
+```bash
+cd backend && .venv/bin/python -m app.convergence.runner   # rebuilds today's read in seconds, nothing fetched
+```
+
+Weights and gates are on the page under Method. Saving rebuilds today's read; earlier days keep the version they were recorded with.
+
 ## Scheduled runs
 
 Two `launchd` jobs keep the data current (`backend/scripts/scheduled/`):
 
-- **Daily, 20:30:** prices, CANSLIM, macro, FPI, news. Log: `backend/cache/scheduled_daily.log`
-- **Weekly, Sunday 09:00:** SEBI orders, rating letters, decisions, estimates. Log: `backend/cache/scheduled_weekly.log`
+- **Daily, 20:30:** prices; results re-reads for stocks that reported (`app.results.runner`: Quick Screener, Combined Score, decisions); Relative Strength and Technical for every stock; CANSLIM; stages for every stock; convergence; macro, FPI, news; full analyses for stocks that have one and whose new quarter landed, at most 10 a night. Log: `backend/cache/scheduled_daily.log`
+- **Weekly, Sunday 09:00:** SEBI orders, rating letters, decisions, estimates, corporate actions, new IPOs, NSE's index lists. Log: `backend/cache/scheduled_weekly.log`
 
 They start Docker if it is off. A Mac that is asleep runs the job when it wakes; one
 that is shut down misses it, and the next run catches up.
